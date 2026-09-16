@@ -32,6 +32,15 @@ module.exports = {
     writeBurstPerMinute: 30,        // 写操作（上传/编辑/删除/打包）
     detectPerMinute: 20,            // 夜鹭检测（只读，可放宽）
 
+    // ---------- 图片查重（上传时检测图鉴内是否已有同图）----------
+    // 算法与 scripts/find_similar_images.py 一致（感知哈希 + 灰度向量），
+    // 命中就拒绝上传（前端拦下 + 服务端 409），文件 sha256 相同必定算命中。
+    // 指纹缓存在 dedup_cache.json（已在 .gitignore 里），删掉会重新计算。
+    dedup: {
+        enabled: true,              // false = 关闭查重（接口与前端红字提示一并停用）
+        threshold: 0.90             // 相似度阈值 0.70–0.99，越高越严（0.90 = 脚本默认值）
+    },
+
     // ---------- 管理员（编辑与删除图片） ----------
     // 进入后台：页面搜索框输入 `login 你的口令` 回车；退出：输入 `exit` 回车。
     // 公网部署请只填 adminKeyHash（口令的 SHA-256），不要填明文 adminKey。

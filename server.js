@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const cors = require('cors');
 const sharp = require('sharp');
 const detector = require('./detector');
+const dedup = require('./dedup');
 
 // ==================== 配置 ====================
 // 优先级：环境变量 > config.js > config.example.js 里的默认值。
@@ -1113,6 +1114,25 @@ const detectLimiter = rateLimit({
     message: { error: '检测请求过于频繁，请稍后再试' }
 });
 
+// 图片查重（图鉴内已有同图就不许再传）
+// 阈值与脚本 scripts/find_similar_images.py 的默认值保持一致：0.90 越接近 1 越严。
+const DEDUP_SETTING = (FILE_CONFIG.dedup && typeof FILE_CONFIG.dedup === 'object') ? FILE_CONFIG.dedup : {};
+const DEDUP_ENABLED_SETTING = pick('DEDUP_ENABLED', DEDUP_SETTING.enabled, true);
+const DEDUP_ENABLED = !/^(0|false|no|off)$/i.test(String(DEDUP_ENABLED_SETTING.value).trim());
+const DEDUP_THRESHOLD_SETTING = pick('DEDUP_THRESHOLD', DEDUP_SETTING.threshold, 0.90);
+const DEDUP_THRESHOLD = (() => {
+    const value = parseFloat(DEDUP_THRESHOLD_SETTING.value);
+    return Number.isFinite(value) && value >= 0.70 && value <= 0.99 ? value : 0.90;
+})();
+const DEDUP_CACHE_FILE = path.join(__dirname, 'dedup_cache.json');
+
+dedup.configure({
+    enabled: DEDUP_ENABLED,
+    threshold: DEDUP_THRESHOLD,
+    imagesDir: path.join(__dirname, 'public', 'images'),
+    cacheFile: DEDUP_CACHE_FILE
+});
+
 // 写操作的轻量防刷限流：删除、仅改名不占每日上传额度，改由这里兜底，
 // 同时挡住"反复提交非法图片"这类不消耗额度但会吃 CPU 的请求。
 const writeBurstLimiter = rateLimit({
@@ -1210,10 +1230,21 @@ app.get('/api/admin/session', (req, res) => {
 app.get('/api/birds', async (req, res) => {    try {
         const page = parseInt(req.query.page) || 1;
         const search = req.query.search || '';
+        // 排序：time = 按时间（data.json 原顺序，新图在前）；likes = 按点赞数从多到少
+        const sort = String(req.query.sort || 'time').toLowerCase();
         const pageSize = 48;
+
+        // 图鉴列表是"活数据"：上传/点赞/排序一变就必须立刻反映。
+        // 全局 /api 中间件默认给的是 max-age=3600，那样换排序或刚上传的新图会被浏览器
+        // 拿旧响应糊住一小时，表现就是"点了排序没反应"。这里必须显式 no-store。
+        res.set('Cache-Control', 'no-store');
 
         // 管理员身份只认 token，不再认"搜索框里输暗号"
         const isAdmin = isAdminRequest(req);
+
+        const clientIp = getClientIp(req);
+        const likes = await loadLikes();
+        const { tierOf } = buildGachaPool(likes);
 
         let filteredBirds = birds;
 
@@ -1223,12 +1254,16 @@ app.get('/api/birds', async (req, res) => {    try {
             );
         }
 
+        if (sort === 'likes') {
+            // 必须先复制再排：过滤为空时 filteredBirds 就是 birds 本身，
+            // 原地排序会永久打乱图鉴顺序。sort 是稳定排序，点赞相同者保持新图在前。
+            filteredBirds = filteredBirds.slice().sort((a, b) =>
+                likeCountOf(likes, b.id) - likeCountOf(likes, a.id)
+            );
+        }
+
         const startIndex = (page - 1) * pageSize;
         const endIndex = startIndex + pageSize;
-
-        const clientIp = getClientIp(req);
-        const likes = await loadLikes();
-        const { tierOf } = buildGachaPool(likes);
 
         const paginatedBirds = filteredBirds.slice(startIndex, endIndex).map(bird => {
             const tier = tierOf.get(bird.id) || DEFAULT_TIER;
@@ -1440,6 +1475,51 @@ app.post('/api/detect', detectLimiter, uploadMemory.single('image'), async (req,
     }
 });
 
+// ============ 图片查重（上传阶段拦截重复图） ============
+// 与夜鹭检测相互独立：模型不可用时查重照常工作。
+// 判定算法见 dedup.js（移植自 scripts/find_similar_images.py 的 phash + 灰度向量）。
+// 这里是只读预检，不占每日上传额度；真正的拦截在 POST /api/birds 里再判一次，
+// 所以前端即使被绕过，重复图也进不了图鉴。
+
+// 查重服务状态：前端据此决定是否展示查重提示
+app.get('/api/dedup/status', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(dedup.getStatus());
+});
+
+// 上传前查重：命中图鉴已有图片时前端直接拦下（图片仅存内存，不落盘）
+app.post('/api/dedup/check', detectLimiter, uploadMemory.single('image'), async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+
+    if (!DEDUP_ENABLED) {
+        return res.json({ enabled: false, duplicate: false, similarity: 0, match: null, threshold: DEDUP_THRESHOLD });
+    }
+    if (!req.file) {
+        return res.status(400).json({ error: '请提供图片文件（字段名 image）' });
+    }
+
+    // 编辑已有鸟类时允许排除它自己（重新上传同一张图不该被当成重复）
+    const excludeId = req.body && req.body.excludeId ? Number(req.body.excludeId) : null;
+
+    const startedAt = Date.now();
+    try {
+        const result = await dedup.checkBuffer(req.file.buffer, birds, excludeId);
+        console.log(`[dedup] ip=${getClientIp(req)} size=${req.file.size}B duplicate=${result.duplicate} similarity=${result.similarity} match=${result.match ? `${result.match.name}#${result.match.id}` : '-'} cost=${Date.now() - startedAt}ms`);
+        res.json({ enabled: true, ...result });
+    } catch (error) {
+        // 查重失败不拦上传：交给提交阶段再判一次，避免因为去重把正常上传堵死
+        console.error('[dedup] 查重失败，放行：', error.message);
+        res.json({
+            enabled: true,
+            duplicate: false,
+            similarity: 0,
+            match: null,
+            threshold: DEDUP_THRESHOLD,
+            error: error.message
+        });
+    }
+});
+
 // 获取单只鸟类
 app.get('/api/birds/:id', async (req, res) => {
     try {
@@ -1496,6 +1576,30 @@ app.post('/api/birds', writeBurstLimiter, upload.single('image'), discardUploadO
             return res.status(400).json({ error: fileError });
         }
 
+        // 图鉴查重：已有同图直接拒收。非 2xx 不消耗每日额度，也不留孤儿图片。
+        // 查重本身出错（图片坏了、缓存写不动）时不拦上传，只记日志。
+        let dedupResult = null;
+        if (DEDUP_ENABLED && req.file && req.file.path) {
+            try {
+                dedupResult = await dedup.checkFile(req.file.path, birds, null);
+                if (dedupResult.duplicate) {
+                    const matched = dedupResult.match;
+                    try { await fs.unlink(req.file.path); } catch (e) { /* ignore */ }
+                    console.log(`[dedup] 拒绝重复上传 ip=${getClientIp(req)} match=${matched ? `${matched.name}#${matched.id}` : '-'} similarity=${dedupResult.similarity}`);
+                    return res.status(409).json({
+                        error: matched
+                            ? `无法上传图鉴内已有图片（与「${matched.name}」相似度 ${(dedupResult.similarity * 100).toFixed(1)}%）`
+                            : '无法上传图鉴内已有图片',
+                        duplicate: true,
+                        similarity: dedupResult.similarity,
+                        match: matched
+                    });
+                }
+            } catch (error) {
+                console.error('[dedup] 提交阶段查重失败，放行：', error.message);
+            }
+        }
+
         const newBird = {
             id: Date.now(),
             name: name,
@@ -1504,6 +1608,11 @@ app.post('/api/birds', writeBurstLimiter, upload.single('image'), discardUploadO
 
         birds.unshift(newBird);
         await saveData();
+
+        // 新图指纹入索引，省得下次查重再解码一遍
+        if (dedupResult && dedupResult.fingerprint) {
+            dedup.remember(req.file.filename, dedupResult.fingerprint, dedupResult.stat);
+        }
 
         // 每成功上传 1 张图片奖励 1 张单抽券
         const tickets = await grantUploadTicket(getClientIp(req));
@@ -1539,7 +1648,31 @@ app.put('/api/birds/:id', writeBurstLimiter, requireAdmin, upload.single('image'
             return res.status(400).json({ error: fileError });
         }
 
+        // 图鉴查重：编辑换图时同样不许换成已有图片（排除自己，重传本图不算重复）
+        let dedupResult = null;
+        if (DEDUP_ENABLED && req.file && req.file.path) {
+            try {
+                dedupResult = await dedup.checkFile(req.file.path, birds, id);
+                if (dedupResult.duplicate) {
+                    const matched = dedupResult.match;
+                    try { await fs.unlink(req.file.path); } catch (e) { /* ignore */ }
+                    console.log(`[dedup] 拒绝重复换图 ip=${getClientIp(req)} bird=${id} match=${matched ? `${matched.name}#${matched.id}` : '-'} similarity=${dedupResult.similarity}`);
+                    return res.status(409).json({
+                        error: matched
+                            ? `无法上传图鉴内已有图片（与「${matched.name}」相似度 ${(dedupResult.similarity * 100).toFixed(1)}%）`
+                            : '无法上传图鉴内已有图片',
+                        duplicate: true,
+                        similarity: dedupResult.similarity,
+                        match: matched
+                    });
+                }
+            } catch (error) {
+                console.error('[dedup] 编辑阶段查重失败，放行：', error.message);
+            }
+        }
+
         const updatedBird = { ...birds[birdIndex] };
+        const replacedImage = (req.file && updatedBird.imageUrl) ? updatedBird.imageUrl : null;
 
         if (name) updatedBird.name = name;
         if (req.file) {
@@ -1557,6 +1690,12 @@ app.put('/api/birds/:id', writeBurstLimiter, requireAdmin, upload.single('image'
 
         birds[birdIndex] = updatedBird;
         await saveData();
+
+        // 索引跟着换图走：旧图摘掉、新图补上
+        if (replacedImage) dedup.forget(replacedImage);
+        if (dedupResult && dedupResult.fingerprint) {
+            dedup.remember(req.file.filename, dedupResult.fingerprint, dedupResult.stat);
+        }
 
         // 换了新图也算"上传 1 张"，同样奖励 1 张单抽券
         const tickets = req.file ? await grantUploadTicket(getClientIp(req)) : null;
@@ -1591,6 +1730,8 @@ app.delete('/api/birds/:id', writeBurstLimiter, requireAdmin, uploadQuotaGuard, 
             } catch (error) {
                 console.error('Error deleting image:', error);
             }
+            // 已删掉的图不该再被算作"图鉴内已有图片"
+            dedup.forget(bird.imageUrl);
         }
 
         birds.splice(birdIndex, 1);
@@ -1649,6 +1790,8 @@ async function startServer() {
             row('单张图片上限', MAX_IMAGE_LABEL, 'config.js:maxImageMB');
             row('写操作限流/分钟', FILE_CONFIG.writeBurstPerMinute === undefined ? 30 : asPositiveInt(FILE_CONFIG.writeBurstPerMinute, 30), 'config.js:writeBurstPerMinute');
             row('检测限流/分钟', FILE_CONFIG.detectPerMinute === undefined ? 20 : asPositiveInt(FILE_CONFIG.detectPerMinute, 20), 'config.js:detectPerMinute');
+            row('图片查重', DEDUP_ENABLED ? `开启（相似度 ≥ ${DEDUP_THRESHOLD.toFixed(2)} 判重复）` : '已关闭',
+                DEDUP_ENABLED ? sourceLabel(DEDUP_THRESHOLD_SETTING) : 'config.js:dedup.enabled');
             row('管理员口令', hasCustomAdminKey
                 ? '已自定义（编辑/删除需登录）'
                 : '⚠ 默认口令 yelu666，请改！',
@@ -1664,6 +1807,13 @@ async function startServer() {
         detector.init()
             .then(() => console.log('[detector] 夜鹭检测已就绪'))
             .catch(err => console.warn('[detector] 预热失败，检测将降级为静默放行：', err.message));
+
+        // 后台预热图鉴指纹缓存：首次启动要为全部图鉴算一遍（之后走 dedup_cache.json）
+        if (DEDUP_ENABLED) {
+            dedup.warmup(birds)
+                .then(info => console.log(`[dedup] 图片查重已就绪：索引 ${info.indexed} 张（本次新算 ${info.computed} 张），阈值 ${DEDUP_THRESHOLD}`))
+                .catch(err => console.warn('[dedup] 预热失败，第一次查重时会自动重试：', err.message));
+        }
     } catch (error) {
         console.error('Error starting server:', error);
         process.exit(1);

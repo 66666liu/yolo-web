@@ -107,15 +107,29 @@
         </div>
     </div>
 
-    <!-- 搜索 + 抽卡入口 -->
+    <!-- 搜索 + 排序筛选 + 抽卡入口 -->
     <div class="bg-white border-2 border-black p-4 p-6 mb-8 md:mb-16 no-export">
-        <div class="flex flex-col md:flex-row gap-3">
-            <div class="relative flex-1">
+        <div class="flex flex-col md:flex-row md:items-center gap-3">
+            <!-- 排序筛选（左）：按时间 / 按点赞数，单选 -->
+            <div class="flex items-center gap-2 order-2 md:order-1 shrink-0">
+                <span class="text-sm text-gray-500 whitespace-nowrap hidden md:inline">排序</span>
+                <button type="button" data-sort="time" aria-pressed="true"
+                        class="sort-btn border px-4 py-2 text-sm whitespace-nowrap transition-colors">
+                    按时间
+                </button>
+                <button type="button" data-sort="likes" aria-pressed="false"
+                        class="sort-btn border px-4 py-2 text-sm whitespace-nowrap transition-colors">
+                    按点赞数
+                </button>
+            </div>
+            <!-- 搜索框（中） -->
+            <div class="relative flex-1 order-1 md:order-2">
                 <i class="fa fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
                 <input type="text" id="search-input" placeholder="搜索鸟类名称..."
                        class="w-full pl-10 pr-4 py-2 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/50">
             </div>
-            <button id="gacha-open" class="btn-primary px-5 py-2 flex items-center justify-center whitespace-nowrap">
+            <!-- 抽卡（右） -->
+            <button id="gacha-open" class="btn-primary px-5 py-2 flex items-center justify-center whitespace-nowrap order-3">
                 <i class="fa fa-magic mr-2"></i>抽卡
                 <span id="gacha-ticket-badge" class="ml-2 text-xs bg-white/25 px-2 py-0.5"></span>
             </button>
@@ -210,6 +224,7 @@
                         <i class="fa fa-cloud-upload text-gray-400 text-3xl mb-2"></i>
                         <p class="text-gray-500 mb-1">点击或拖拽图片到这里上传</p>
                         <p class="text-xs text-gray-400" id="upload-limit-hint">支持 JPG / PNG / WebP，上限 20MB</p>
+                        <p class="text-xs text-red-500 mt-1">无法上传图鉴内已有图片</p>
                     </div>
                     <div id="image-preview-container" class="hidden mt-3">
                         <!-- 固定框内等比完整显示整张图（object-contain），超出时容器可滚动。
@@ -222,28 +237,33 @@
                             <!-- 夜鹭检测框图层（left/top/width/height 由 renderDetectBoxes 设定） -->
                             <div id="detect-box-layer" class="absolute pointer-events-none"></div>
                         </div>
+                        <!-- 图片查重结果：命中图鉴已有图片时红字拦下（no-export 保证不污染长图导出） -->
+                        <div id="dedup-result" class="hidden mt-2 p-2 border-2 text-sm no-export"></div>
                         <!-- 夜鹭检测结果提示：no-export 保证不污染长图导出 -->
                         <div id="detect-result" class="hidden mt-2 p-2 border-2 text-sm no-export"></div>
-                        <div id="detect-actions" class="hidden mt-2 flex items-center space-x-2 no-export">
-                            <button type="button" id="detect-continue"
-                                    class="text-xs px-3 py-1 border border-gray-400 text-gray-600 hover:bg-gray-100 transition-colors">
-                                仍要继续上传
-                            </button>
-                            <button type="button" id="detect-reselect"
-                                    class="text-xs px-3 py-1 border border-gray-400 text-gray-600 hover:bg-gray-100 transition-colors">
-                                重新选图
+                        <!-- 操作行：继续上传/重新选图（仅未检出夜鹭时出现）与移除图片同一行，移除图片靠右 -->
+                        <div id="detect-actions" class="mt-2 flex items-center gap-2 flex-wrap no-export">
+                            <div id="detect-action-buttons" class="hidden items-center gap-2">
+                                <button type="button" id="detect-continue"
+                                        class="text-sm px-5 py-2 border border-gray-400 text-gray-600 hover:bg-gray-100 transition-colors">
+                                    继续上传
+                                </button>
+                                <button type="button" id="detect-reselect"
+                                        class="text-sm px-5 py-2 border border-gray-400 text-gray-600 hover:bg-gray-100 transition-colors">
+                                    重新选图
+                                </button>
+                            </div>
+                            <button type="button" id="remove-image"
+                                    class="ml-auto shrink-0 text-sm px-5 py-2 border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+                                <i class="fa fa-trash-o mr-1"></i>移除图片
                             </button>
                         </div>
-                        <button type="button" id="remove-image" class="mt-2 text-red-500 text-sm hover:text-red-700">
-                            <i class="fa fa-trash-o mr-1"></i>移除图片
-                        </button>
                     </div>
                 </div>
 
                 <!-- 上传说明与今日剩余次数 -->
                 <div class="space-y-1 no-export">
                     <p class="text-green-600 text-sm">审核通过标准：夜鹭，或疑似夜鹭</p>
-                    <p class="text-orange-600 text-sm">通过后自动显示，请耐心等待审核</p>
                     <p class="text-green-600 text-sm" id="upload-remaining">今日还可上传 8/8 次</p>
                 </div>
 
@@ -391,10 +411,13 @@
     const removeImageBtn = document.getElementById('remove-image');
     // 夜鹭检测相关元素
     const detectResultEl = document.getElementById('detect-result');
-    const detectActionsEl = document.getElementById('detect-actions');
+    // 操作行（#detect-actions）里始终有 #remove-image，所以只隐藏"继续上传/重新选图"这一组
+    const detectActionButtonsEl = document.getElementById('detect-action-buttons');
     const detectBoxLayer = document.getElementById('detect-box-layer');
     const detectContinueBtn = document.getElementById('detect-continue');
     const detectReselectBtn = document.getElementById('detect-reselect');
+    // 图片查重（图鉴内已有同图则不许上传）
+    const dedupResultEl = document.getElementById('dedup-result');
     // 上传说明与放大查看
     const uploadRemainingEl = document.getElementById('upload-remaining');
     const submitBirdBtn = document.getElementById('submit-bird-btn');
@@ -660,7 +683,7 @@
 
         // 预览图尺寸变化时重算检测框位置
         imagePreview.addEventListener('load', () => {
-            if (detectState.status === 'pass') renderDetectBoxes(detectState.result);
+            if (detectState.status === 'pass' && !detectDisplaySuppressed()) renderDetectBoxes(detectState.result);
         });
 
         // 预览容器滚动时不需要重算检测框：图层现在是图片的"同尺寸覆盖层"，
@@ -672,6 +695,12 @@
 
         // 加载更多按钮点击事件
         loadMoreBtn.addEventListener('click', loadMoreBirds);
+
+        // 排序筛选按钮（按时间 / 按点赞数）
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            btn.addEventListener('click', () => setBirdSort(btn.dataset.sort));
+        });
+        applySortButtonStyles();
 
         // 图鉴图片点击放大（事件委托，卡片是动态生成的）
         birdGallery.addEventListener('click', (e) => {
@@ -724,12 +753,50 @@
     }
 
     // 获取鸟类列表
+    // ==================== 图鉴排序筛选（按时间 / 按点赞数） ====================
+    // 'time'  = 服务端 data.json 的原顺序（新图在前）
+    // 'likes' = 点赞数从多到少（点赞相同则新图在前）
+    const SORT_ACTIVE_CLASSES = ['bg-black', 'text-white', 'border-black'];
+    const SORT_INACTIVE_CLASSES = ['text-gray-600', 'hover:bg-gray-100'];
+    let birdSort = 'time';
+    // 请求进行中又来了新请求（换排序/换搜索/加载更多）时，把最新一次参数排进队列，
+    // 等当前请求结束自动重跑。否则那次点击会被 isLoading 静默吞掉，而按钮已经变成
+    // 选中态，用户看到的就是"点了没反应、再点也没用"（birdSort 已是新值，提前 return）。
+    let queuedFetchArgs = null;
+
+    function applySortButtonStyles() {
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            const active = btn.dataset.sort === birdSort;
+            btn.classList.remove(...SORT_ACTIVE_CLASSES, ...SORT_INACTIVE_CLASSES);
+            btn.classList.add(...(active ? SORT_ACTIVE_CLASSES : SORT_INACTIVE_CLASSES));
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+
+    function setBirdSort(sort) {
+        if (sort !== 'time' && sort !== 'likes') return;
+        if (birdSort === sort) return;
+        birdSort = sort;
+        applySortButtonStyles();
+        // 换排序必须回到第 1 页重新取，否则新旧顺序会在列表里拼在一起
+        const searchTerm = isAdminCommand(searchInput.value) ? '' : searchInput.value.trim();
+        fetchBirds(1, searchTerm);
+    }
+
     async function fetchBirds(page = 1, searchTerm = '', checkAdmin = false) {
-        if (isLoading || (!page && page !== 1)) return Promise.resolve();
+        if (!page && page !== 1) return Promise.resolve();
+
+        // 已有请求在飞：不丢弃，排队等它结束后按最新参数重跑
+        if (isLoading) {
+            queuedFetchArgs = [page, searchTerm, checkAdmin];
+            return Promise.resolve();
+        }
 
         isLoading = true;
 
-        let url = `${API_BASE_URL}/birds?page=${page}`;
+        // 末尾带一个时间戳：换排序/换关键词时 URL 必然不同，
+        // 浏览器 HTTP 缓存和残留的 Service Worker 都不可能拿旧响应糊住新排序。
+        let url = `${API_BASE_URL}/birds?page=${page}&sort=${encodeURIComponent(birdSort)}&_=${Date.now()}`;
         if (searchTerm) {
             url += `&search=${encodeURIComponent(searchTerm)}`;
         }
@@ -864,6 +931,12 @@
             }
         } finally {
             isLoading = false;
+            // 排队中的那次请求现在补上（取最新参数，旧的自然作废）
+            if (queuedFetchArgs) {
+                const next = queuedFetchArgs;
+                queuedFetchArgs = null;
+                fetchBirds(next[0], next[1], next[2]);
+            }
         }
     }
 
@@ -1524,6 +1597,10 @@
     // 模型可用性：undefined=未探测, true=可用, false=不可用（不可用则整段跳过，不发无谓请求）
     let detectAvailable;
 
+    // 图片查重状态：duplicate = 图鉴内已有同图（提交会被拦下）
+    // pending 是进行中的查重请求，提交前会等它出结果，避免"检测中就传上去"
+    let dedupState = { status: 'idle', result: null, token: 0, pending: null };
+
     // 渲染检测框：把模型返回的原图坐标换算到"图片实际画出来的矩形"上。
     //
     // 核心：检测框图层必须和图片处在同一个坐标系里。图层用图片的布局盒
@@ -1590,17 +1667,53 @@
 
     // 预览图尺寸变化时重算检测框位置
     const repositionDetectBoxes = debounce(() => {
-        if (detectState.status === 'pass') renderDetectBoxes(detectState.result);
+        if (detectState.status === 'pass' && !detectDisplaySuppressed()) renderDetectBoxes(detectState.result);
     }, 150);
     window.addEventListener('resize', repositionDetectBoxes);
     window.addEventListener('orientationchange', repositionDetectBoxes);
+
+    // "继续上传/重新选图"这一组的显示与隐藏（#remove-image 在同一个操作行里，始终可见）
+    function showDetectActions() {
+        detectActionButtonsEl.classList.remove('hidden');
+        detectActionButtonsEl.classList.add('flex');
+    }
+    function hideDetectActions() {
+        detectActionButtonsEl.classList.add('hidden');
+        detectActionButtonsEl.classList.remove('flex');
+    }
+
+    // 查重进行中 / 已命中时，夜鹭检测的提示一律让位：
+    // 查重是硬拦截，红字出现时不该再显示"已检出夜鹭"之类的绿色提示（两种提示不同时出现）。
+    function detectDisplaySuppressed() {
+        return dedupState.status === 'duplicate' || dedupState.status === 'checking';
+    }
+
+    // 把夜鹭检测的提示整行收起来（结果条 + 检测框 + 继续上传/重新选图）
+    function hideDetectResult() {
+        detectResultEl.classList.add('hidden');
+        hideDetectActions();
+        clearDetectBoxes();
+    }
+
+    // 查重没命中时，把刚才让位的夜鹭检测提示补回来，否则会一直空着
+    function restoreDetectDisplay() {
+        if (detectState.status === 'pass' || detectState.status === 'warn') {
+            showDetectState(detectState.status, detectState.result);
+        }
+    }
 
     // 显示检测状态：state 为 'checking' | 'pass' | 'warn' | 'skip'
     function showDetectState(state, result) {
         detectResultEl.classList.remove('hidden', 'border-green-500', 'text-green-700',
             'bg-green-50', 'border-yellow-500', 'text-yellow-700', 'bg-yellow-50',
             'border-gray-300', 'text-gray-500', 'bg-gray-50');
-        detectActionsEl.classList.add('hidden');
+        hideDetectActions();
+
+        // 查重优先：命中的红字就是唯一提示
+        if (detectDisplaySuppressed()) {
+            hideDetectResult();
+            return;
+        }
 
         if (state === 'checking') {
             detectResultEl.classList.add('border-gray-300', 'text-gray-500', 'bg-gray-50');
@@ -1620,7 +1733,7 @@
         if (state === 'warn') {
             detectResultEl.classList.add('border-yellow-500', 'text-yellow-700', 'bg-yellow-50');
             detectResultEl.innerHTML = `<i class="fa fa-exclamation-triangle mr-1"></i>${(result && result.verdict) || '未检出夜鹭，夜师傅今天出什么COS~'}`;
-            detectActionsEl.classList.remove('hidden');
+            showDetectActions();
             clearDetectBoxes();
             return;
         }
@@ -1675,7 +1788,7 @@
             detectState.status = 'skip';
             detectState.result = null;
             detectResultEl.classList.add('hidden');
-            detectActionsEl.classList.add('hidden');
+            hideDetectActions();
             clearDetectBoxes();
             return;
         }
@@ -1710,7 +1823,87 @@
         }
     }
 
-    // 统一的选图处理：校验 -> 预览 -> 检测
+    // ============ 图片查重（图鉴内已有同图就不许上传） ============
+    // 与夜鹭检测相互独立：模型没就绪时查重照常进行。
+    // 前端命中就拦下提交；服务端在 POST/PUT 时会再判一次，绕过前端也传不进去。
+
+    // 查重状态提示：checking = 检测中，duplicate = 命中，其余状态只隐藏提示
+    function showDedupState(state, result) {
+        dedupResultEl.classList.remove('hidden', 'border-gray-300', 'text-gray-500',
+            'bg-gray-50', 'border-red-500', 'text-red-700', 'bg-red-50');
+
+        if (state === 'checking') {
+            dedupResultEl.classList.add('border-gray-300', 'text-gray-500', 'bg-gray-50');
+            dedupResultEl.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>正在检测图片是否重复...';
+            return;
+        }
+
+        if (state === 'duplicate') {
+            const matched = result && result.match;
+            const pct = (result && Number.isFinite(result.similarity))
+                ? `（相似度 ${(result.similarity * 100).toFixed(1)}%）`
+                : '';
+            const who = (matched && matched.name)
+                ? `图鉴内已有「${escapeHtml(matched.name)}」${pct}`
+                : `图鉴内已有该图片${pct}`;
+            dedupResultEl.classList.add('border-red-500', 'text-red-700', 'bg-red-50');
+            dedupResultEl.innerHTML = `<i class="fa fa-ban mr-1"></i>${who}，无法重复上传`;
+            // 命中的红字是唯一提示：夜鹭检测那条（"已检出夜鹭"/"未检出…"）一并收起来
+            hideDetectResult();
+            return;
+        }
+
+        dedupResultEl.classList.add('hidden');
+    }
+
+    // 触发一次查重（同样带竞态保护；pending 供提交前等待）
+    function runDedupCheck(file) {
+        const token = ++dedupState.token;
+        dedupState.status = 'checking';
+        dedupState.result = null;
+        showDedupState('checking');
+
+        const task = (async () => {
+            const formData = new FormData();
+            formData.append('image', file);
+            // 编辑已有鸟类时排除它自己：重传本图不算重复
+            if (currentBirdId) formData.append('excludeId', String(currentBirdId));
+
+            const response = await fetch(`${API_BASE_URL}/dedup/check`, {
+                method: 'POST',
+                body: formData
+            });
+            if (!response.ok) throw new Error('查重请求失败');
+            return response.json();
+        })();
+
+        dedupState.pending = task;
+
+        task.then(result => {
+            if (token !== dedupState.token) return;
+            if (result && result.duplicate) {
+                dedupState.status = 'duplicate';
+                dedupState.result = result;
+                showDedupState('duplicate', result);
+            } else {
+                dedupState.status = 'ok';
+                showDedupState('ok');
+                // 查重没命中：把让位期间收起来的夜鹭检测提示补回来
+                restoreDetectDisplay();
+            }
+        }).catch(error => {
+            if (token !== dedupState.token) return;
+            // 查重失败不拦上传：提交阶段服务端还会再判一次
+            console.warn('图片查重失败，交由服务端判定:', error);
+            dedupState.status = 'unavailable';
+            showDedupState('unavailable');
+            restoreDetectDisplay();
+        }).finally(() => {
+            if (token === dedupState.token) dedupState.pending = null;
+        });
+    }
+
+    // 统一的选图处理：校验 -> 预览 -> 检测 + 查重
     function acceptImageFile(file) {
         if (!file) return;
 
@@ -1728,6 +1921,7 @@
             imageUploadArea.classList.add('hidden');
             // 图片就位后立即异步检测，不阻塞用户填写名称
             runDetection(file);
+            runDedupCheck(file);
         };
         reader.readAsDataURL(file);
     }
@@ -1789,12 +1983,15 @@
         // 重置检测状态
         detectState = { status: 'idle', result: null, token: ++detectState.token };
         detectResultEl.classList.add('hidden');
-        detectActionsEl.classList.add('hidden');
+        hideDetectActions();
         clearDetectBoxes();
+        // 重置查重状态
+        dedupState = { status: 'idle', result: null, token: ++dedupState.token, pending: null };
+        dedupResultEl.classList.add('hidden');
     }
 
     // 处理鸟类表单提交
-    function handleBirdFormSubmit(e) {
+    async function handleBirdFormSubmit(e) {
         e.preventDefault();
 
         // 额度由服务端判定，这里不再用本地计数拦截：
@@ -1820,6 +2017,21 @@
             return;
         }
 
+        // 查重闸门：命中图鉴已有图片直接拒绝上传（服务端还会再判一次）。
+        // 检测中则先等它出结果，避免用户抢在查重完成前点上传。
+        if (imageFile && dedupState.pending) {
+            try {
+                await dedupState.pending;
+            } catch (error) {
+                // 查重失败按放行处理，由服务端定夺
+            }
+        }
+        if (imageFile && dedupState.status === 'duplicate') {
+            showDedupState('duplicate', dedupState.result);
+            showNotification('图鉴内已有该图片，无法重复上传', 'error');
+            return;
+        }
+
         // 检测闸门：模型不可用时静默放行，检出夜鹭直接通过，
         // 未检出则要求用户显式确认一次（确认后仍走原有上传接口，不做拦截）
         if (imageFile && detectState.status === 'checking') {
@@ -1828,7 +2040,7 @@
         }
         if (imageFile && detectState.status === 'warn' && !detectState.confirmed) {
             showDetectState('warn', detectState.result);
-            showNotification('未检出夜鹭，夜师傅今天出什么COS~ 如仍要上传请点"仍要继续上传"', 'warning');
+            showNotification('未检出夜鹭，夜师傅今天出什么COS~ 如仍要上传请点"继续上传"', 'warning');
             return;
         }
 

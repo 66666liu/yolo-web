@@ -19,3 +19,7 @@ config.js
 models/*.onnx
 recognition_cache.json
 recognition_cache.json.tmp
+
+# 图片查重指纹缓存（删掉会重新计算）
+dedup_cache.json
+dedup_cache.json.tmp

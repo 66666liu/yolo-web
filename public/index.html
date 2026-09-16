@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>夜鹭页录</title>
+    <link rel="icon" href="images/游隼.jpg" type="image/jpg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#111111',
+                        secondary: '#303030',
+                        neutral: '#e5e7eb',
+                        dark: '#212529'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+
+            .card-hover {
+                @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+            }
+
+            .btn-primary {
+                @apply bg-primary hover:bg-secondary text-white font-medium py-2 px-4 transition-all duration-300;
+            }
+
+            .btn-outline {
+                @apply border border-primary text-primary hover:bg-primary hover:text-white font-medium py-2 px-4 transition-all duration-300;
+            }
+
+            /* 强制每行4列的网格布局 */
+            .gallery-fixed-cols {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            /* 仅在导出PNG中显示的元素（默认隐藏） */
+            .export-only {
+                display: none !important;
+            }
+
+            /* 仅在网页中显示的元素（默认显示） */
+            .screen-only {
+                display: block !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-dark min-h-screen flex flex-col">
+<!-- 导航栏 -->
+<header class="bg-white border-b-2 border-black p-4 fixed w-full z-50 transition-all duration-300" id="navbar">
+    <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+            <i class="fa fa-dove text-primary text-5xl"></i>
+            <h1 class="text-lg md:text-2xl lg:text-3xl font-bold text-primary">常见鸟类辨识图鉴</h1>
+        </div>
+        <button id="add-bird-btn" class="btn-primary flex items-center">
+            <i class="fa fa-plus mr-2"></i>添加
+        </button>
+    </div>
+</header>
+
+<!-- 主内容区 -->
+<main class="container mx-auto px-4 pt-24 pb-16 flex-grow">
+
+    <!-- 鸟类统计 -->
+    <div class="mb-4 mt-4 flex flex-row gap-[12px]">
+        <div class="bg-white border-2 border-black p-4 p-6 flex items-center flex-1">
+            <div class="w-12 h-12 bg-primary/10 flex items-center justify-center mr-4">
+                <i class="fa fa-database text-primary text-xl"></i>
+            </div>
+            <div>
+                <p class="text-gray-500 text-sm">
+                    <span class="inline-block md:hidden">已收录</span>
+                    <span class="hidden md:inline">已收录</span>
+                    <br class="md:hidden">鸟类
+                </p>
+                <p class="text-2xl font-bold" id="bird-count">0</p>
+            </div>
+        </div>
+        <div class="bg-white border-2 border-black p-4 p-6 flex items-center flex-1">
+            <div class="w-12 h-12 bg-secondary/10 flex items-center justify-center mr-4">
+                <i class="fa fa-image text-secondary text-xl"></i>
+            </div>
+            <div>
+                <p class="text-gray-500 text-sm">
+                    <span class="inline-block md:hidden">已收录</span>
+                    <span class="hidden md:inline">已收录</span>
+                    <br class="md:hidden">图片
+                </p>
+                <p class="text-2xl font-bold" id="image-count">0</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 搜索 + 抽卡入口 -->
+    <div class="bg-white border-2 border-black p-4 p-6 mb-8 md:mb-16 no-export">
+        <div class="flex flex-col md:flex-row gap-3">
+            <div class="relative flex-1">
+                <i class="fa fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                <input type="text" id="search-input" placeholder="搜索鸟类名称..."
+                       class="w-full pl-10 pr-4 py-2 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/50">
+            </div>
+            <button id="gacha-open" class="btn-primary px-5 py-2 flex items-center justify-center whitespace-nowrap">
+                <i class="fa fa-magic mr-2"></i>抽卡
+                <span id="gacha-ticket-badge" class="ml-2 text-xs bg-white/25 px-2 py-0.5"></span>
+            </button>
+        </div>
+        <p id="admin-badge" class="hidden mt-2 text-xs text-red-600">
+            <i class="fa fa-unlock mr-1"></i>管理员模式已开启：卡片上出现 ✏ / 🗑，在搜索框输入 <code>exit</code> 退出
+        </p>
+    </div>
+
+    <div id="bird-gallery-export">
+        <p class="text-black ml-1 mt-4 text-3xl font-bold export-only">常见鸟类辨识图鉴</p>
+        <p class="text-black ml-1 mt-2 mb-4 text-base export-only">来自：夜鹭页录 https://yeluyelu.mynatapp.cc</p>
+
+        <!-- 鸟类画廊 -->
+        <div id="bird-gallery" class="grid gallery-fixed-cols gap-1 md:gap-8 export-area">
+            <!-- 鸟类卡片将通过JavaScript动态生成 -->
+            <div class="col-span-full text-center py-12">
+                <div class="inline-block animate-spin h-12 w-12 border-b-2 border-primary"></div>
+                <p class="text-gray-500 mt-4">加载鸟类数据中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载更多 -->
+    <div class="mt-12 text-center no-export">
+        <button id="load-more" class="btn-primary px-8">
+            <i class="fa fa-refresh mr-2"></i>加载更多
+        </button>
+    </div>
+</main>
+
+<!-- 抽卡模态框 -->
+<div id="gacha-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden no-export p-4">
+    <div id="gacha-panel"
+         class="bg-white shadow-2xl w-full max-w-2xl transform transition-all duration-300 scale-95 opacity-0 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center p-5 border-b">
+            <h2 class="text-2xl font-bold">夜鹭抽卡</h2>
+            <button id="gacha-close" class="text-gray-500 hover:text-black text-3xl leading-none">&times;</button>
+        </div>
+        <div class="p-5">
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 mb-4 text-sm">
+                <span>单抽券：<b id="gacha-single-count" class="text-lg">0</b> 张</span>
+                <span>十连券：<b id="gacha-ten-count" class="text-lg">0</b> 张</span>
+                <span class="text-gray-500 text-xs" id="gacha-gift-hint">
+                    每日登录送 2 张单抽券 + 1 张十连券；每成功上传 1 张图片再送 1 张单抽券（没用完的会留着）
+                </span>
+            </div>
+
+            <div id="gacha-rates" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs"></div>
+
+            <div class="flex flex-col md:flex-row gap-3 mb-5">
+                <button id="gacha-pull-1" class="btn-primary flex-1 py-3">单抽</button>
+                <button id="gacha-pull-10" class="btn-primary flex-1 py-3">十连抽</button>
+            </div>
+
+            <div id="gacha-result" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
+
+            <div id="gacha-result-actions" class="hidden mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <p id="gacha-result-summary" class="text-sm text-gray-600"></p>
+                <button id="gacha-download" class="btn-primary px-4 py-2 whitespace-nowrap">
+                    <i class="fa fa-download mr-1"></i>下载本批（zip）
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加/编辑鸟类模态框 -->
+<div id="bird-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden no-export">
+    <div class="bg-white shadow-2xl w-full max-w-lg mx-4 transform transition-all duration-300 scale-95 opacity-0"
+         id="modal-content">
+        <div class="flex justify-between items-center p-6 border-b">
+            <h2 class="text-xl font-bold text-primary" id="modal-title">上传夜鹭拟态图鉴</h2>
+            <button id="close-modal" class="text-gray-400 hover:text-gray-600">
+                <i class="fa fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <form id="bird-form" enctype="multipart/form-data">
+                <input type="hidden" id="bird-id" name="bird-id">
+                <div class="mb-4">
+                    <label for="bird-name" class="block text-sm font-medium text-gray-700 mb-1">名称（10个字以内）</label>
+                    <input type="text" id="bird-name" name="bird-name" placeholder="输入鸟类名称"
+                           class="w-full px-4 py-2 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/50">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">图片</label>
+                    <div class="border-2 border-dashed border-gray-300 p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                         id="image-upload-area">
+                        <input type="file" id="bird-image" name="bird-image"
+                               accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" class="hidden">
+                        <i class="fa fa-cloud-upload text-gray-400 text-3xl mb-2"></i>
+                        <p class="text-gray-500 mb-1">点击或拖拽图片到这里上传</p>
+                        <p class="text-xs text-gray-400" id="upload-limit-hint">支持 JPG / PNG / WebP，上限 20MB</p>
+                    </div>
+                    <div id="image-preview-container" class="hidden mt-3">
+                        <!-- 固定框内等比完整显示整张图（object-contain），超出时容器可滚动。
+                             检测框图层由 JS 精确对齐到图片矩形（随图一起滚动），不靠 inset-0 -->
+                        <div id="image-preview-frame"
+                             class="relative w-full bg-gray-100 border border-gray-200 overflow-auto"
+                             style="max-height: 320px;">
+                            <img id="image-preview" src="" alt="预览图"
+                                 class="block mx-auto max-w-full object-contain">
+                            <!-- 夜鹭检测框图层（left/top/width/height 由 renderDetectBoxes 设定） -->
+                            <div id="detect-box-layer" class="absolute pointer-events-none"></div>
+                        </div>
+                        <!-- 夜鹭检测结果提示：no-export 保证不污染长图导出 -->
+                        <div id="detect-result" class="hidden mt-2 p-2 border-2 text-sm no-export"></div>
+                        <div id="detect-actions" class="hidden mt-2 flex items-center space-x-2 no-export">
+                            <button type="button" id="detect-continue"
+                                    class="text-xs px-3 py-1 border border-gray-400 text-gray-600 hover:bg-gray-100 transition-colors">
+                                仍要继续上传
+                            </button>
+                            <button type="button" id="detect-reselect"
+                                    class="text-xs px-3 py-1 border border-gray-400 text-gray-600 hover:bg-gray-100 transition-colors">
+                                重新选图
+                            </button>
+                        </div>
+                        <button type="button" id="remove-image" class="mt-2 text-red-500 text-sm hover:text-red-700">
+                            <i class="fa fa-trash-o mr-1"></i>移除图片
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 上传说明与今日剩余次数 -->
+                <div class="space-y-1 no-export">
+                    <p class="text-green-600 text-sm">审核通过标准：夜鹭，或疑似夜鹭</p>
+                    <p class="text-orange-600 text-sm">通过后自动显示，请耐心等待审核</p>
+                    <p class="text-green-600 text-sm" id="upload-remaining">今日还可上传 8/8 次</p>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="flex justify-end space-x-3 mt-4">
+                    <button type="button" id="cancel-bird" class="btn-outline">取消</button>
+                    <button type="submit" class="btn-primary" id="submit-bird-btn">上传</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 图片放大查看 -->
+<div id="image-lightbox" class="fixed inset-0 bg-black/80 z-[60] hidden items-center justify-center no-export p-4">
+    <img id="lightbox-img" src="" alt="放大查看"
+         class="max-w-full max-h-full object-contain bg-white">
+    <button id="lightbox-close"
+            class="absolute top-4 right-4 text-white/80 hover:text-white text-4xl leading-none">
+        <i class="fa fa-times"></i>
+    </button>
+</div>
+
+<!-- 页脚 -->
+<footer class="text-black py-2 border-t-2 border-black no-export">
+    <div class="container mx-auto px-2">
+        <div class="flex flex-col items-center justify-center">
+            <div class="mt-1 mb-4 text-center">
+                <button id="export-btn" class="text-black hover:text-gray-500 transition-colors flex items-center mx-auto mt-b text-xl font-bold">
+                    <i class="fa fa-download mr-1"></i> 导出图片
+                </button>
+                <button id="about-btn" class="text-black hover:text-gray-500 transition-colors flex items-center mx-auto text-xl font-bold mt-2.5 mb-1">
+                    <i class="fa fa-info-circle mr-1"></i> 关于
+                </button>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<!-- 关于模态框 -->
+<div id="about-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden no-export">
+    <div class="bg-white shadow-2xl w-full max-w-lg mx-4 transform transition-all duration-300 scale-95 opacity-0"
+         id="about-modal-content">
+        <div class="flex justify-between items-center p-6 border-b">
+            <h2 class="text-xl font-bold text-primary">关于“夜鹭页录”</h2>
+            <button id="close-about-modal" class="text-gray-400 hover:text-gray-600">
+                <i class="fa fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <p>
+                本网站源于“夜鹭拟态图鉴”梗图，
+                图片来自各大社群与用户上传。<br>
+                简单而言，这里名为“夜鹭”的
+                都不是夜鹭，而其它的都是夜鹭。<br>
+                <br>
+                期待你的上传！<br>
+                <a href="https://space.bilibili.com/29602970" class="text-l font-bold underline">另可点击此处联系开发者</a>
+            </p>
+        </div>
+        <div class="p-6 border-t">
+            <div class="flex justify-end">
+                <button id="close-about-btn" class="btn-primary">
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 通知组件 -->
+<div id="notification"
+     class="fixed bottom-4 right-4 bg-primary text-white px-4 py-2 border-2 border-black p-4 transform transition-all duration-500 translate-y-20 opacity-0 z-50"></div>
+
+<!-- 加载遮罩 -->
+<div id="loadingOverlay" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden no-export">
+    <div class="bg-white p-6 rounded-lg shadow-2xl">
+        <div class="flex items-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mr-4"></div>
+            <span class="text-lg font-bold text-primary">正在生成图片...</span>
+        </div>
+    </div>
+</div>
+
+<script src="html-to-png.js"></script>
+
+<script>
+    window.isServiceWorkerEnabled = false; // 全局标志，默认禁用
+
+    // 注册 Service Worker
+    // if ('serviceWorker' in navigator) {
+    //     window.addEventListener('load', () => {
+    //         navigator.serviceWorker.register('/sw.js')
+    //             .then(registration => {
+    //                 console.log('SW registered:', registration);
+    //                 window.isServiceWorkerEnabled = true; // 注册成功，启用缓存
+    //             })
+    //             .catch(error => {
+    //                 console.log('SW registration failed:', error);
+    //                 // 注册失败时清除可能存在的旧缓存
+    //                 if ('caches' in window) {
+    //                     caches.keys().then(cacheNames => {
+    //                         return Promise.all(
+    //                             cacheNames.map(cacheName => {
+    //                                 return caches.delete(cacheName);
+    //                             })
+    //                         );
+    //                     });
+    //                 }
+    //                 window.isServiceWorkerEnabled = false; // 禁用缓存
+    //             });
+    //     });
+    // }
+
+    // API配置
+    // 根据当前域名动态设置 API 基础 URL
+    const API_BASE_URL = (() => {
+        // 开发环境使用 localhost
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'http://localhost:3000/api';
+        }
+        // 生产环境使用当前域名
+        return `${window.location.protocol}//${window.location.host}/api`;
+    })();
+    const CACHE_NAME = 'bird-guide-cache-v4';   // v4：列表新增 likes/tier 字段，旧缓存必须失效
+    const CACHE_EXPIRATION_DAYS = 7; // 缓存过期天数
+    let currentBirdId = null; // 当前操作的鸟类ID
+    let currentPage = 1;
+    let isLoading = false;
+    let hasMoreData = true;
+
+    // DOM 元素
+    const addBirdBtn = document.getElementById('add-bird-btn');
+    const birdModal = document.getElementById('bird-modal');
+    const modalContent = document.getElementById('modal-content');
+    const closeModal = document.getElementById('close-modal');
+    const cancelBird = document.getElementById('cancel-bird');
+    const birdForm = document.getElementById('bird-form');
+    const birdIdInput = document.getElementById('bird-id');
+    const birdNameInput = document.getElementById('bird-name');
+    const birdImageInput = document.getElementById('bird-image');
+    const imageUploadArea = document.getElementById('image-upload-area');
+    const imagePreviewContainer = document.getElementById('image-preview-container');
+    const imagePreview = document.getElementById('image-preview');
+    const removeImageBtn = document.getElementById('remove-image');
+    // 夜鹭检测相关元素
+    const detectResultEl = document.getElementById('detect-result');
+    const detectActionsEl = document.getElementById('detect-actions');
+    const detectBoxLayer = document.getElementById('detect-box-layer');
+    const detectContinueBtn = document.getElementById('detect-continue');
+    const detectReselectBtn = document.getElementById('detect-reselect');
+    // 上传说明与放大查看
+    const uploadRemainingEl = document.getElementById('upload-remaining');
+    const submitBirdBtn = document.getElementById('submit-bird-btn');
+    const imageLightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    const lightboxClose = document.getElementById('lightbox-close');
+    const birdGallery = document.getElementById('bird-gallery');
+    const birdCountElement = document.getElementById('bird-count');
+    const imageCountElement = document.getElementById('image-count');
+    const navbar = document.getElementById('navbar');
+    const searchInput = document.getElementById('search-input');
+    const loadMoreBtn = document.getElementById('load-more');
+    const notification = document.getElementById('notification');
+    const modalTitle = document.getElementById('modal-title');
+    // 关于模态框控制
+    const aboutBtn = document.getElementById('about-btn');
+    const aboutModal = document.getElementById('about-modal');
+    const aboutModalContent = document.getElementById('about-modal-content');
+    const closeAboutModal = document.getElementById('close-about-modal');
+    const closeAboutBtn = document.getElementById('close-about-btn');
+
+    // 打开关于模态框
+    aboutBtn.addEventListener('click', () => {
+        aboutModal.classList.remove('hidden');
+        setTimeout(() => {
+            aboutModalContent.classList.remove('scale-95', 'opacity-0');
+            aboutModalContent.classList.add('scale-100', 'opacity-100');
+        }, 10);
+    });
+
+    // 关闭关于模态框
+    function closeAbout() {
+        aboutModalContent.classList.remove('scale-100', 'opacity-100');
+        aboutModalContent.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            aboutModal.classList.add('hidden');
+        }, 300);
+    }
+
+    closeAboutModal.addEventListener('click', closeAbout);
+    closeAboutBtn.addEventListener('click', closeAbout);
+
+    // 点击模态框外部关闭
+    aboutModal.addEventListener('click', (e) => {
+        if (e.target === aboutModal) {
+            closeAbout();
+        }
+    });
+
+    // 初始化页面
+    function init() {
+        setupEventListeners();
+        initCache().then(() => {
+            fetchBirds();
+            fetchBirdCount();
+        });
+    }
+
+    // 防抖函数
+    function debounce(func, delay) {
+        let timeout;
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    // 优化后的防抖函数（带输入长度判断）
+    function debounceSearch(func, delay) {
+        let timeout;
+        return function() {
+            const context = this;
+            const args = arguments;
+            const inputValue = this.value.trim(); // 获取输入框的值
+
+            // 清除之前的定时器
+            clearTimeout(timeout);
+
+            // 如果输入框为空或已达到最小搜索长度，立即执行搜索
+            if (inputValue.length === 0 || inputValue.length >= 1) {
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            }
+        };
+    }
+
+    // ==================== 管理员会话与命令 ====================
+    // 进入：搜索框输入 `login 口令` 回车（口令由服务端校验，前端不存口令、也不会把口令当搜索词发出去）
+    // 退出：搜索框输入 `exit` 回车
+    // 会话：服务端签发的 token 存在 localStorage，默认 12 小时有效，刷新页面仍然是管理员
+    const ADMIN_TOKEN_KEY = 'yeluAdminToken';
+
+    function adminToken() {
+        return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+    }
+
+    /** 需要管理员权限的请求带上 token */
+    function authHeaders(extra = {}) {
+        const token = adminToken();
+        return token ? { ...extra, 'X-Admin-Token': token } : extra;
+    }
+
+    /** login / exit 是命令，绝不能被当成搜索词发出去（口令会进 URL 与服务端访问日志） */
+    function isAdminCommand(raw) {
+        const value = String(raw || '').trim().toLowerCase();
+        return value === 'exit' || value.startsWith('login');
+    }
+
+    async function runAdminCommand(raw) {
+        const value = String(raw || '').trim();
+        const lower = value.toLowerCase();
+
+        if (lower === 'exit') {
+            localStorage.removeItem(ADMIN_TOKEN_KEY);
+            window.isAdmin = false;
+            updateAdminUI();
+            searchInput.value = '';
+            fetchBirds(1, '');
+            showNotification('已退出管理员模式');
+            return;
+        }
+
+        if (!lower.startsWith('login')) return;
+
+        const key = value.slice(5).trim();
+        searchInput.value = '';   // 无论成败都先清空，别把口令留在输入框里
+        if (!key) {
+            showNotification('格式：login 你的口令');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/admin/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key })
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) throw new Error((data && data.error) || '登录失败');
+
+            localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+            window.isAdmin = true;
+            updateAdminUI();
+            fetchBirds(1, '');
+            showNotification(`管理员模式已开启（${data.expiresInHours} 小时内有效，输入 exit 退出）`, 'success');
+        } catch (error) {
+            window.isAdmin = false;
+            updateAdminUI();
+            showNotification(error.message || '登录失败', 'error');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // 管理员状态以会话 token 为准（不再由搜索词决定）
+        window.isAdmin = Boolean(adminToken());
+
+        const searchInput = document.getElementById('search-input');
+        const searchDebounced = debounceSearch(() => {
+            if (isAdminCommand(searchInput.value)) return;   // 命令不触发搜索
+            fetchBirds(1, searchInput.value.trim());
+        }, 750); // 延时750ms执行搜索
+
+        // 监听输入框内容变化
+        searchInput.addEventListener('input', searchDebounced);
+
+        // 命令必须显式回车，避免边打字边把半截口令发到服务端
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            if (!isAdminCommand(searchInput.value)) return;
+            e.preventDefault();
+            runAdminCommand(searchInput.value);
+        });
+    });
+
+    // 在 init() 函数中添加缓存初始化
+    async function initCache() {
+        if (!window.isServiceWorkerEnabled) return; // 如果SW未启用，跳过缓存初始化
+
+        if ('caches' in window) {
+            try {
+                const cache = await caches.open(CACHE_NAME);
+                await cleanupExpiredCache();
+            } catch (error) {
+                console.error('Cache initialization failed:', error);
+            }
+        }
+    }
+
+    // 清理过期缓存
+    async function cleanupExpiredCache() {
+        if (!window.isServiceWorkerEnabled) return; // 如果SW未启用，跳过缓存清理
+
+        try {
+            const cacheNames = await caches.keys();
+            const currentTime = Date.now();
+
+            for (const name of cacheNames) {
+                if (name !== CACHE_NAME) {
+                    await caches.delete(name);
+                }
+            }
+
+            // 检查当前缓存是否过期
+            const cache = await caches.open(CACHE_NAME);
+            const response = await cache.match(`${API_BASE_URL}/birds?cache_meta=1`);
+
+            if (response) {
+                const data = await response.json();
+                const cacheTime = new Date(data.cacheTime).getTime();
+                const expirationTime = cacheTime + (CACHE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000);
+
+                if (currentTime > expirationTime) {
+                    await caches.delete(CACHE_NAME);
+                    console.log('Expired cache deleted');
+                }
+            }
+        } catch (error) {
+            console.error('Cache cleanup failed:', error);
+        }
+    }
+
+    // 设置事件监听器
+    function setupEventListeners() {
+        // 添加鸟类按钮点击事件
+        addBirdBtn.addEventListener('click', () => openBirdModal('add'));
+
+        // 关闭模态框按钮点击事件
+        closeModal.addEventListener('click', closeBirdModal);
+        cancelBird.addEventListener('click', closeBirdModal);
+
+        // 鸟类表单提交事件
+        birdForm.addEventListener('submit', handleBirdFormSubmit);
+
+        // 图片上传区域点击事件
+        imageUploadArea.addEventListener('click', () => birdImageInput.click());
+
+        // 图片选择事件
+        birdImageInput.addEventListener('change', handleImageUpload);
+
+        // 拖拽上传
+        setupDragAndDrop();
+
+        // 移除图片按钮点击事件
+        removeImageBtn.addEventListener('click', removeImagePreview);
+
+        // 夜鹭检测：未检出时用户显式确认后仍可继续上传
+        detectContinueBtn.addEventListener('click', () => {
+            detectState.confirmed = true;
+            const form = document.getElementById('bird-form');
+            if (form.requestSubmit) {
+                form.requestSubmit();
+            } else {
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        });
+
+        // 重新选图
+        detectReselectBtn.addEventListener('click', () => {
+            removeImagePreview();
+            birdImageInput.click();
+        });
+
+        // 预览图尺寸变化时重算检测框位置
+        imagePreview.addEventListener('load', () => {
+            if (detectState.status === 'pass') renderDetectBoxes(detectState.result);
+        });
+
+        // 预览容器滚动时不需要重算检测框：图层现在是图片的"同尺寸覆盖层"，
+        // 和图片同处滚动内容里，会随图一起滚动（旧版在这里重算 + 减 scrollTop，
+        // 等于补偿两遍，才导致拖滚动条时框相对图片位移）
+
+        // 滚动事件 - 导航栏样式变化
+        window.addEventListener('scroll', handleScroll);
+
+        // 加载更多按钮点击事件
+        loadMoreBtn.addEventListener('click', loadMoreBirds);
+
+        // 图鉴图片点击放大（事件委托，卡片是动态生成的）
+        birdGallery.addEventListener('click', (e) => {
+            const img = e.target.closest('img');
+            if (!img) return;
+            // 管理员的编辑/删除按钮有自己的处理，不在此列
+            if (e.target.closest('button')) return;
+            openLightbox(img.src);
+        });
+
+        // 抽卡入口与模态框
+        const gachaOpenBtn = document.getElementById('gacha-open');
+        if (gachaOpenBtn) gachaOpenBtn.addEventListener('click', openGachaModal);
+
+        const gachaCloseBtn = document.getElementById('gacha-close');
+        if (gachaCloseBtn) gachaCloseBtn.addEventListener('click', closeGachaModal);
+
+        const gachaModalEl = document.getElementById('gacha-modal');
+        if (gachaModalEl) {
+            gachaModalEl.addEventListener('click', (e) => {
+                if (e.target === gachaModalEl) closeGachaModal();
+            });
+        }
+
+        const gachaPull1Btn = document.getElementById('gacha-pull-1');
+        if (gachaPull1Btn) gachaPull1Btn.addEventListener('click', () => doGachaPull(1));
+
+        const gachaPull10Btn = document.getElementById('gacha-pull-10');
+        if (gachaPull10Btn) gachaPull10Btn.addEventListener('click', () => doGachaPull(10));
+
+        const gachaDownloadBtn = document.getElementById('gacha-download');
+        if (gachaDownloadBtn) gachaDownloadBtn.addEventListener('click', downloadGachaZip);
+
+        // 点赞（事件委托：卡片是动态生成的，且上面那条放大查看的事件会跳过 button）
+        birdGallery.addEventListener('click', (e) => {
+            const likeBtn = e.target.closest('.like-btn');
+            if (!likeBtn) return;
+            e.stopPropagation();
+            toggleBirdLike(likeBtn);
+        });
+
+        // 初始化今日剩余上传次数（以服务端返回的额度为准）
+        refreshUploadQuota();
+
+        // 初始化抽卡券（服务端会在当天首次访问时发放每日额度）
+        refreshGachaTickets();
+
+        // 拉取站点配置（尺寸上限、每日赠送券数、档位占比等都以后端 config.js 为准）
+        refreshAppConfig();
+    }
+
+    // 获取鸟类列表
+    async function fetchBirds(page = 1, searchTerm = '', checkAdmin = false) {
+        if (isLoading || (!page && page !== 1)) return Promise.resolve();
+
+        isLoading = true;
+
+        let url = `${API_BASE_URL}/birds?page=${page}`;
+        if (searchTerm) {
+            url += `&search=${encodeURIComponent(searchTerm)}`;
+        }
+
+        // 仅在明确要求时检查管理员权限
+        if (checkAdmin) {
+            url += `&checkAdmin=true`;
+        }
+
+        if (page === 1) {
+            birdGallery.innerHTML = `
+        <div class="col-span-full text-center py-12">
+            <div class="inline-block animate-spin h-12 w-12 border-b-2 border-primary"></div>
+            <p class="text-gray-500 mt-4">加载鸟类数据中...</p>
+        </div>
+        `;
+        }
+
+        try {
+            let response;
+
+            // 根据isServiceWorkerEnabled决定请求方式
+            if (window.isServiceWorkerEnabled) {
+                // 使用缓存策略
+                response = await fetchWithCache(url, forceRefresh);
+            } else {
+                // 直接从网络获取，不使用缓存
+                response = await fetch(url, {
+                    cache: 'no-store',
+                    headers: authHeaders()
+                });
+
+                // 检查响应状态
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+            }
+
+            const data = await response.json();
+
+            // 管理员状态：以会话 token 为准，由服务端确认；只有 token 失效才关掉
+            if (data.isAdmin !== undefined) {
+                if (data.isAdmin) {
+                    window.isAdmin = true;
+                } else if (adminToken()) {
+                    localStorage.removeItem(ADMIN_TOKEN_KEY);
+                    window.isAdmin = false;
+                    showNotification('管理员会话已过期，请重新 login', 'warning');
+                } else {
+                    window.isAdmin = false;
+                }
+                updateAdminUI(); // 更新管理员相关 UI
+            }
+
+            if (page === 1) {
+                birdGallery.innerHTML = '';
+            }
+
+            if (data.birds.length === 0) {
+                if (page === 1) {
+                    birdGallery.innerHTML = `
+                <div class="col-span-full text-center py-12">
+                    <i class="fa fa-search text-gray-400 text-4xl mb-4"></i>
+                    <p class="text-gray-500">没有找到匹配的鸟类</p>
+                </div>
+                `;
+                } else {
+                    hasMoreData = false;
+                    showNotification('没有更多数据了');
+                    updateLoadMoreButton(false);
+                }
+                return;
+            }
+
+            data.birds.forEach(bird => {
+                const birdCard = createBirdCard(bird);
+                birdGallery.appendChild(birdCard);
+            });
+
+            currentPage = page;
+            hasMoreData = data.hasMore;
+            updateLoadMoreButton(data.hasMore);
+        } catch (error) {
+            console.error('Fetching birds failed:', error);
+
+            // 如果是无缓存模式，直接显示错误信息
+            if (!window.isServiceWorkerEnabled) {
+                showNoDataMessage(page);
+                showNotification('无法加载数据，请检查网络连接', 'error');
+                return;
+            }
+
+            // 网络请求失败，尝试从缓存获取（仅在Service Worker启用时）
+            try {
+                const cache = await caches.open(CACHE_NAME);
+                const cachedResponse = await cache.match(url);
+
+                if (cachedResponse) {
+                    showNotification('使用缓存数据，内容可能不是最新的', 'warning');
+
+                    const data = await cachedResponse.json();
+
+                    if (page === 1) {
+                        birdGallery.innerHTML = '';
+                    }
+
+                    if (data.birds && data.birds.length > 0) {
+                        data.birds.forEach(bird => {
+                            const birdCard = createBirdCard(bird);
+                            birdGallery.appendChild(birdCard);
+                        });
+
+                        currentPage = page;
+                        hasMoreData = data.hasMore || false;
+                        updateLoadMoreButton(data.hasMore || false);
+
+                        // 添加刷新缓存按钮
+                        if (page === 1) {
+                            addRefreshCacheButton();
+                        }
+                    } else {
+                        showNoDataMessage(page);
+                    }
+                } else {
+                    showNoDataMessage(page);
+                    throw new Error('No cached data available');
+                }
+            } catch (cacheError) {
+                console.error('Cache fetch failed:', cacheError);
+                showNoDataMessage(page);
+                showNotification('无法加载数据，请检查网络连接', 'error');
+            }
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    // 根据管理员状态更新UI的函数
+    let lastAdminUIState = null;
+
+    function updateAdminUI() {
+        const adminControls = document.querySelectorAll('.admin-control');
+        adminControls.forEach(el => {
+            el.style.display = window.isAdmin ? 'block' : 'none';
+        });
+
+        const badge = document.getElementById('admin-badge');
+        if (badge) badge.classList.toggle('hidden', !window.isAdmin);
+
+        // 只在状态真的变化时提示一次，否则每次列表刷新都会弹
+        if (lastAdminUIState === window.isAdmin) return;
+        lastAdminUIState = window.isAdmin;
+        if (window.isAdmin) {
+            showNotification('管理员模式已开启（在搜索框输入 exit 退出）', 'success');
+        }
+    }
+
+    // 辅助函数：显示无数据消息
+    function showNoDataMessage(page) {
+        if (page === 1) {
+            birdGallery.innerHTML = `
+        <div class="col-span-full text-center py-12">
+            <i class="fa fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
+            <p class="text-gray-500">无法加载数据，请检查网络连接</p>
+            <button id="retry-load" class="btn-primary mt-4">
+                <i class="fa fa-refresh mr-2"></i>重试
+            </button>
+        </div>
+        `;
+
+            document.getElementById('retry-load').addEventListener('click', () => {
+                fetchBirds(1, searchInput.value.toLowerCase().trim(), true);
+            });
+        }
+    }
+
+    // 添加刷新缓存按钮
+    function addRefreshCacheButton() {
+        // 如果是无缓存模式，不显示刷新缓存按钮
+        if (!window.isServiceWorkerEnabled) return;
+
+        const existingRefreshBtn = document.getElementById('refresh-cache-btn');
+        if (existingRefreshBtn) return;
+
+        const refreshBtn = document.createElement('button');
+        refreshBtn.id = 'refresh-cache-btn';
+        refreshBtn.className = 'btn-outline mt-4';
+        refreshBtn.innerHTML = '<i class="fa fa-refresh mr-2"></i>刷新缓存数据';
+
+        const notificationDiv = document.createElement('div');
+        notificationDiv.className = 'text-sm text-gray-500 mt-2';
+        notificationDiv.textContent = '您正在查看缓存数据，点击上方按钮刷新';
+
+        const container = document.createElement('div');
+        container.className = 'col-span-full text-center';
+        container.appendChild(refreshBtn);
+        container.appendChild(notificationDiv);
+
+        birdGallery.appendChild(container);
+
+        refreshBtn.addEventListener('click', () => {
+            refreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>刷新中...';
+            fetchBirds(1, searchInput.value.toLowerCase().trim(), true);
+        });
+    }
+
+    // 带缓存功能的 fetch 函数
+    async function fetchWithCache(url, forceRefresh = false) {
+        // 如果是无缓存模式，直接从网络获取
+        if (!window.isServiceWorkerEnabled) {
+            const response = await fetch(url, {
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return response;
+        }
+
+        const cache = await caches.open(CACHE_NAME);
+
+        if (!forceRefresh) {
+            const cachedResponse = await cache.match(url);
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+        }
+
+        try {
+            const networkResponse = await fetch(url);
+
+            if (networkResponse.ok) {
+                // 克隆响应以同时存入缓存
+                const responseToCache = networkResponse.clone();
+
+                // 添加缓存时间元数据
+                const responseData = await responseToCache.json();
+                responseData.cacheTime = new Date().toISOString();
+
+                // 创建新的可缓存响应
+                const cacheResponse = new Response(JSON.stringify(responseData), {
+                    headers: networkResponse.headers
+                });
+
+                await cache.put(url, cacheResponse);
+            }
+
+            return networkResponse;
+        } catch (error) {
+            // 如果网络请求失败，尝试返回缓存
+            if (!forceRefresh) {
+                const cachedResponse = await cache.match(url);
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+            }
+            throw error;
+        }
+    }
+
+    // 新增：更新加载更多按钮状态
+    function updateLoadMoreButton(hasMore) {
+        if (hasMore) {
+            // 有更多数据时显示正常按钮
+            loadMoreBtn.innerHTML = '<i class="fa fa-refresh mr-2"></i>加载更多';
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+            // 没有更多数据时显示"到底了"
+            loadMoreBtn.innerHTML = '<i class="fa fa-check mr-2"></i>到底了';
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    }
+
+    // 获取鸟类总数
+    function fetchBirdCount() {
+        fetch(`${API_BASE_URL}/birds/count`, {
+            cache: 'no-store' // 禁用缓存
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('获取鸟类数量失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                birdCountElement.textContent = data.type;
+                imageCountElement.textContent = data.count;
+            })
+            .catch(error => {
+                console.error('Error fetching bird count:', error);
+                showNotification('获取鸟类数量失败');
+            });
+    }
+
+    // 打开鸟类模态框
+    function openBirdModal(mode, birdId = null) {
+        currentBirdId = birdId;
+
+        if (mode === 'add') {
+            modalTitle.textContent = '上传夜鹭拟态图鉴';
+            birdIdInput.value = '';
+            birdForm.reset();
+            removeImagePreview();
+        } else if (mode === 'edit') {
+            modalTitle.textContent = '编辑鸟类';
+
+            fetch(`${API_BASE_URL}/birds/${birdId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取鸟类数据失败');
+                    }
+                    return response.json();
+                })
+                .then(bird => {
+                    birdIdInput.value = bird.id;
+                    birdNameInput.value = bird.name;
+
+                    // 显示现有图片
+                    if (bird.imageUrl) {
+                        imagePreview.src = `${API_BASE_URL}/images/${bird.imageUrl}`;
+                        imagePreviewContainer.classList.remove('hidden');
+                        imageUploadArea.classList.add('hidden');
+                    } else {
+                        removeImagePreview();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching bird:', error);
+                    showNotification('获取鸟类数据失败');
+                    closeBirdModal();
+                });
+        }
+
+        birdModal.classList.remove('hidden');
+        setTimeout(() => {
+            modalContent.classList.remove('scale-95', 'opacity-0');
+            modalContent.classList.add('scale-100', 'opacity-100');
+        }, 10);
+    }
+
+    // 关闭鸟类模态框
+    function closeBirdModal() {
+        modalContent.classList.remove('scale-100', 'opacity-100');
+        modalContent.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            birdModal.classList.add('hidden');
+            currentBirdId = null;
+        }, 300);
+    }
+
+    // ==================== 点赞 ====================
+    /** 插入 innerHTML 前先转义，避免图片名里的 < > & 破坏页面 */
+    function escapeHtml(text) {
+        return String(text === undefined || text === null ? '' : text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    async function toggleBirdLike(btn) {
+        const id = parseInt(btn.getAttribute('data-id'), 10);
+        if (!Number.isInteger(id)) return;
+
+        btn.disabled = true;
+        try {
+            const response = await fetch(`${API_BASE_URL}/birds/${id}/like`, { method: 'POST' });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) throw new Error((data && data.error) || '点赞失败');
+
+            // 同一张图在页面上可能出现多次，全部同步成最新状态
+            document.querySelectorAll(`.like-btn[data-id="${id}"]`).forEach(other => {
+                const countEl = other.querySelector('.like-count');
+                const iconEl = other.querySelector('i');
+                if (countEl) countEl.textContent = data.likes;
+                if (iconEl) iconEl.className = data.liked ? 'fa fa-heart text-red-500' : 'fa fa-heart-o';
+            });
+
+            // 点赞会改变档位与概率表，顺手刷新
+            refreshGachaTickets();
+        } catch (error) {
+            showNotification(error.message || '点赞失败');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ==================== 抽卡 ====================
+    // 概率与档位全部由服务端计算（按点赞数排名切档），前端只做展示与调用，
+    // 抽卡结果也由服务端产生，前端改不了概率。
+    const TIER_STYLE = {
+        legendary: { badge: 'border-yellow-500 text-yellow-700 bg-yellow-50', ring: 'border-yellow-500' },
+        epic: { badge: 'border-purple-500 text-purple-700 bg-purple-50', ring: 'border-purple-500' },
+        rare: { badge: 'border-blue-500 text-blue-700 bg-blue-50', ring: 'border-blue-500' },
+        common: { badge: 'border-gray-300 text-gray-600 bg-gray-50', ring: 'border-gray-300' }
+    };
+    // 在 config.js 里加了新档位时，按档位顺序自动分配配色，不会一律显示成灰色
+    const TIER_PALETTE = [
+        'border-yellow-500 text-yellow-700 bg-yellow-50',
+        'border-purple-500 text-purple-700 bg-purple-50',
+        'border-blue-500 text-blue-700 bg-blue-50',
+        'border-gray-300 text-gray-600 bg-gray-50',
+        'border-green-500 text-green-700 bg-green-50',
+        'border-pink-500 text-pink-700 bg-pink-50'
+    ];
+    let tierStyleMap = new Map();
+    const tierStyle = key => tierStyleMap.get(key) || TIER_STYLE[key] || TIER_STYLE.common;
+
+    function rebuildTierStyles() {
+        const tiers = (appConfig && appConfig.gacha && appConfig.gacha.tiers) || [];
+        const map = new Map();
+        tiers.forEach((tier, index) => {
+            if (TIER_STYLE[tier.key]) {
+                map.set(tier.key, TIER_STYLE[tier.key]);
+                return;
+            }
+            const palette = TIER_PALETTE[index % TIER_PALETTE.length];
+            map.set(tier.key, { badge: palette, ring: palette.split(' ')[0] });
+        });
+        tierStyleMap = map;
+    }
+
+    let gachaInfo = null;          // 最近一次 /api/gacha/tickets 的结果（券 + 概率表）
+    let gachaBatch = [];           // 本批抽到的图，用于打包下载
+    let gachaGrantNotified = false;
+
+    // ==================== 站点配置（GET /api/config） ====================
+    // 尺寸上限、抽卡赠送数量、档位占比等都在后端 config.js 里，前端文案与校验跟着它走，
+    // 这样改配置不会出现"后端改了、页面还写着旧数字"。
+    let appConfig = null;
+
+    async function refreshAppConfig() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/config`, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            appConfig = await response.json();
+            applyAppConfig();
+        } catch (error) {
+            console.warn('获取站点配置失败，沿用内置默认值：', error.message);
+        }
+    }
+
+    function applyAppConfig() {
+        if (!appConfig) return;
+
+        const mb = Number(appConfig.maxImageMB);
+        if (Number.isFinite(mb) && mb > 0) {
+            MAX_UPLOAD_BYTES = mb * 1024 * 1024;
+            MAX_UPLOAD_LABEL = `${mb}MB`;
+            const hint = document.getElementById('upload-limit-hint');
+            if (hint) hint.textContent = `支持 JPG / PNG / WebP，上限 ${MAX_UPLOAD_LABEL}`;
+        }
+
+        const gachaConfig = appConfig.gacha || {};
+        const giftHint = document.getElementById('gacha-gift-hint');
+        if (giftHint) {
+            giftHint.textContent = `每日登录送 ${gachaConfig.dailySingleTickets} 张单抽券 + `
+                + `${gachaConfig.dailyTenTickets} 张十连券；每成功上传 1 张图片再送 1 张单抽券（没用完的会留着）`;
+        }
+
+        rebuildTierStyles();
+        renderGachaInfo();
+    }
+
+    function openGachaModal() {
+        const modal = document.getElementById('gacha-modal');
+        const panel = document.getElementById('gacha-panel');
+        if (!modal || !panel) return;
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            panel.classList.remove('scale-95', 'opacity-0');
+            panel.classList.add('scale-100', 'opacity-100');
+        }, 10);
+        refreshGachaTickets();
+    }
+
+    function closeGachaModal() {
+        const modal = document.getElementById('gacha-modal');
+        const panel = document.getElementById('gacha-panel');
+        if (!modal || !panel) return;
+        panel.classList.remove('scale-100', 'opacity-100');
+        panel.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    function renderGachaInfo() {
+        if (!gachaInfo) return;
+        const { tickets, pool } = gachaInfo;
+
+        const singleEl = document.getElementById('gacha-single-count');
+        const tenEl = document.getElementById('gacha-ten-count');
+        const badgeEl = document.getElementById('gacha-ticket-badge');
+        if (singleEl) singleEl.textContent = tickets.single;
+        if (tenEl) tenEl.textContent = tickets.ten;
+        if (badgeEl) badgeEl.textContent = `${tickets.single} 单抽 · ${tickets.ten} 十连`;
+
+        const pull1Btn = document.getElementById('gacha-pull-1');
+        const pull10Btn = document.getElementById('gacha-pull-10');
+        if (pull1Btn) pull1Btn.disabled = tickets.single < 1;
+        if (pull10Btn) pull10Btn.disabled = !(tickets.ten >= 1 || tickets.single >= 10);
+
+        const ratesEl = document.getElementById('gacha-rates');
+        if (ratesEl && pool) {
+            const shareByKey = new Map(((appConfig && appConfig.gacha && appConfig.gacha.tiers) || [])
+                .map(tier => [tier.key, tier.share]));
+            ratesEl.innerHTML = pool.rates.map(item => {
+                const style = tierStyle(item.key);
+                const share = shareByKey.get(item.key);
+                return `<div class="border-2 ${style.ring} ${style.badge} px-2 py-1 text-center">
+                    <div class="font-bold">${item.label} ${(item.rate * 100).toFixed(0)}%</div>
+                    <div class="opacity-70">${item.count} 张${share === undefined ? '' : ` · 池占比 ${(share * 100).toFixed(0)}%`}</div>
+                </div>`;
+            }).join('') + `<div class="col-span-2 md:col-span-4 text-gray-500">
+                共 ${pool.total} 张图参与抽卡。点赞越多的图档位越高、单张越难抽到（同一 IP 对每张图只能赞一次）
+            </div>`;
+        }
+    }
+
+    async function refreshGachaTickets() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/gacha/tickets`, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            gachaInfo = await response.json();
+            renderGachaInfo();
+
+            // 服务端在"当天第一次访问"时发放每日额度，这里只提示一次
+            if (gachaInfo.grantedToday && !gachaGrantNotified) {
+                gachaGrantNotified = true;
+                showNotification(`每日登录奖励：单抽券 +${gachaInfo.daily.single}、十连券 +${gachaInfo.daily.ten}`);
+            }
+        } catch (error) {
+            console.warn('获取抽卡状态失败：', error.message);
+        }
+    }
+
+    function renderGachaResults(results) {
+        const container = document.getElementById('gacha-result');
+        const actions = document.getElementById('gacha-result-actions');
+        const summary = document.getElementById('gacha-result-summary');
+        if (!container) return;
+
+        gachaBatch = Array.isArray(results) ? results.slice() : [];
+
+        container.innerHTML = gachaBatch.map(item => {
+            const style = tierStyle(item.tierKey);
+            const src = item.imageUrl ? `${API_BASE_URL}/images/${item.imageUrl}` : '';
+            const name = escapeHtml(item.name);
+            return `<div class="border-2 ${style.ring} p-1 bg-white">
+                <div class="relative">
+                    <img src="${src}" alt="${name}" class="w-full h-24 md:h-28 object-cover bg-gray-100">
+                    <span class="absolute top-1 left-1 text-[10px] px-1 border ${style.badge}">${item.tierLabel}</span>
+                </div>
+                <div class="flex items-center justify-between mt-1 text-xs">
+                    <span class="truncate" title="${name}">${name}</span>
+                    <span class="text-gray-400 shrink-0 ml-1"><i class="fa fa-heart text-red-400"></i> ${item.likes}</span>
+                </div>
+                <a href="${src}" download class="text-[11px] text-blue-600 hover:underline">下载单张</a>
+            </div>`;
+        }).join('');
+
+        const counts = {};
+        gachaBatch.forEach(item => { counts[item.tierLabel] = (counts[item.tierLabel] || 0) + 1; });
+        if (summary) {
+            summary.textContent = `本批 ${gachaBatch.length} 张：`
+                + Object.entries(counts).map(([label, n]) => `${label}×${n}`).join('、');
+        }
+        if (actions) actions.classList.toggle('hidden', gachaBatch.length === 0);
+    }
+
+    async function doGachaPull(count) {
+        const button = document.getElementById(count === 10 ? 'gacha-pull-10' : 'gacha-pull-1');
+        if (button) button.disabled = true;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/gacha/pull`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count })
+            });
+            const data = await response.json().catch(() => null);
+
+            if (!response.ok) {
+                if (data && data.tickets) {
+                    gachaInfo = { ...(gachaInfo || {}), tickets: data.tickets };
+                    renderGachaInfo();
+                }
+                throw new Error((data && data.error) || '抽卡失败');
+            }
+
+            gachaInfo = { ...(gachaInfo || {}), tickets: data.tickets, pool: data.pool };
+            renderGachaInfo();
+            renderGachaResults(data.results);
+
+            const best = data.results.find(item => item.tierKey === 'legendary')
+                || data.results.find(item => item.tierKey === 'epic');
+            showNotification(best ? `${best.tierLabel}！抽到了「${best.name}」` : '抽卡完成');
+        } catch (error) {
+            showNotification(error.message || '抽卡失败');
+        } finally {
+            // 券数变了，按钮可用态按服务端返回的最新值重算
+            renderGachaInfo();
+        }
+    }
+
+    async function downloadGachaZip() {
+        if (!gachaBatch.length) return;
+        const button = document.getElementById('gacha-download');
+        const originalHtml = button ? button.innerHTML : '';
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>打包中…';
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/gacha/zip`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: gachaBatch.map(item => item.id) })
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error((data && data.error) || `打包失败（HTTP ${response.status}）`);
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `夜鹭抽卡-${new Date().toISOString().slice(0, 10)}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } catch (error) {
+            showNotification(error.message || '打包失败');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = originalHtml;
+            }
+        }
+    }
+
+    // ==================== 图片放大查看 ====================
+    function openLightbox(src) {
+        if (!src) return;
+        lightboxImg.src = src;
+        imageLightbox.classList.remove('hidden');
+        imageLightbox.classList.add('flex');
+    }
+
+    function closeLightbox() {
+        imageLightbox.classList.add('hidden');
+        imageLightbox.classList.remove('flex');
+        lightboxImg.src = '';
+    }
+
+    lightboxClose.addEventListener('click', closeLightbox);
+    // 点击遮罩空白处关闭（点图片本身不关）
+    imageLightbox.addEventListener('click', (e) => {
+        if (e.target === imageLightbox) closeLightbox();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !imageLightbox.classList.contains('hidden')) closeLightbox();
+    });
+
+    // 预览图点击放大
+    imagePreview.classList.add('cursor-zoom-in');
+    imagePreview.addEventListener('click', () => openLightbox(imagePreview.src));
+
+    // ==================== 上传相关常量与校验 ====================
+    // 与后端 config.js 同步：拿不到就沿用这里的默认值
+    let MAX_UPLOAD_BYTES = 20 * 1024 * 1024;      // 由 GET /api/config 的 maxImageMB 覆盖
+    let MAX_UPLOAD_LABEL = '20MB';
+    const ALLOWED_UPLOAD_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
+    const ALLOWED_UPLOAD_LABEL = 'JPG、PNG、WebP 格式';
+
+    /** 校验选中的图片，返回错误文案；合法返回 null */
+    function validatePickedImage(file) {
+        if (!file) return null;
+        const lower = (file.name || '').toLowerCase();
+        const extOk = ALLOWED_UPLOAD_EXT.some(ext => lower.endsWith(ext));
+        // 有些系统下 file.type 为空，此时以扩展名为准
+        const typeOk = !file.type || ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+        if (!extOk || !typeOk) {
+            return `仅支持 ${ALLOWED_UPLOAD_LABEL}的图片`;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+            return `图片大小不能超过 ${MAX_UPLOAD_LABEL}`;
+        }
+        return null;
+    }
+
+    // ==================== 今日剩余上传次数（以服务端为准） ====================
+    // 服务端按"IP + 自然日"统计真正成功的上传，是唯一计数来源。
+    // localStorage 只在接口取不到时用于兜底展示，避免两边数字打架
+    // （旧版就是两边各算一套，才出现"显示还剩 6 次却被限流"）。
+    const UPLOAD_QUOTA_FALLBACK_LIMIT = 8;
+    let serverQuota = null; // { limit, used, remaining, unlimited, resetAt, day }
+
+    function formatQuotaResetAt(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        const pad = n => String(n).padStart(2, '0');
+        return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function renderRemainingUploads(quota) {
+        if (!uploadRemainingEl) return;
+
+        if (!quota) {
+            // 兜底：按本地记录估算（仅展示，最终以服务端返回为准）
+            const operations = JSON.parse(localStorage.getItem('birdOperations') || '[]');
+            const today = new Date().toISOString().split('T')[0];
+            const used = operations.filter(op => op.date === today).length;
+            const left = Math.max(0, UPLOAD_QUOTA_FALLBACK_LIMIT - used);
+            uploadRemainingEl.textContent = `今日还可上传 ${left}/${UPLOAD_QUOTA_FALLBACK_LIMIT} 次`;
+            return;
+        }
+
+        if (quota.unlimited) {
+            uploadRemainingEl.textContent = '今日上传次数不限';
+            return;
+        }
+
+        uploadRemainingEl.textContent = `今日还可上传 ${quota.remaining}/${quota.limit} 次`;
+        if (quota.remaining <= 0) {
+            const resetAt = formatQuotaResetAt(quota.resetAt);
+            if (resetAt) uploadRemainingEl.textContent += `（${resetAt} 重置）`;
+        }
+    }
+
+    function updateRemainingUploads() {
+        renderRemainingUploads(serverQuota);
+    }
+
+    // 拉取服务端额度；失败则退回本地估算
+    async function refreshUploadQuota() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/upload-quota`, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            serverQuota = await response.json();
+        } catch (error) {
+            console.warn('获取上传额度失败，暂用本地记录估算：', error.message);
+            serverQuota = null;
+        }
+        updateRemainingUploads();
+        return serverQuota;
+    }
+
+    // 写操作的响应都带 X-RateLimit-* 头，直接同步，省一次请求
+    function syncQuotaFromHeaders(response) {
+        const limitRaw = response.headers.get('X-RateLimit-Limit');
+        const remainRaw = response.headers.get('X-RateLimit-Remaining');
+        if (limitRaw === null || remainRaw === null) return;
+
+        if (limitRaw === 'unlimited' || remainRaw === 'unlimited') {
+            serverQuota = { unlimited: true, limit: null, used: null, remaining: null };
+            return;
+        }
+
+        const limit = Number.parseInt(limitRaw, 10);
+        const remaining = Number.parseInt(remainRaw, 10);
+        if (!Number.isFinite(limit) || !Number.isFinite(remaining)) return;
+
+        const resetRaw = response.headers.get('X-RateLimit-Reset');
+        const resetAt = resetRaw
+            ? new Date(Number(resetRaw) * 1000).toISOString()
+            : (serverQuota && serverQuota.resetAt) || null;
+
+        serverQuota = {
+            unlimited: false,
+            limit,
+            remaining,
+            used: Math.max(0, limit - remaining),
+            resetAt
+        };
+    }
+
+    // ==================== 夜鹭检测（上传阶段筛选） ====================
+    // 规则：检出夜鹭 -> 直接通过；未检出 -> 提示"夜师傅今天出什么COS~"，用户仍可继续上传
+    // 模型不可用 / 请求失败 -> 静默放行，绝不阻塞上传
+
+    let detectState = { status: 'idle', result: null, token: 0 };
+    // 模型可用性：undefined=未探测, true=可用, false=不可用（不可用则整段跳过，不发无谓请求）
+    let detectAvailable;
+
+    // 渲染检测框：把模型返回的原图坐标换算到"图片实际画出来的矩形"上。
+    //
+    // 核心：检测框图层必须和图片处在同一个坐标系里。图层用图片的布局盒
+    // （offsetLeft/offsetTop/offsetWidth/offsetHeight，相对 position:relative 的预览容器，
+    // 属于滚动内容坐标）精确定位，框在图层里用百分比定位 —— 图层与图片严格同尺寸，
+    // 于是滚动预览、改窗口大小、弹窗缩放动画都不会让框和图片错位。
+    //
+    // 旧实现有两个坑（实测：偏差最大 142px，且随滚动漂移 57~104px）：
+    //   1. 用容器可视高度算 contain 比例，但图片高于容器时容器会滚动，
+    //      图片的渲染高度远大于可视高度 —— 比例只有真实值的一半左右（0.36 vs 0.78）；
+    //   2. 绝对定位的图层本身就随内容滚动，代码又减了一次 scrollLeft/scrollTop，
+    //      等于补偿了两遍，于是拖动滚动条时框会相对图片位移。
+    function renderDetectBoxes(result) {
+        detectBoxLayer.innerHTML = '';
+        if (!result || !result.detections || !result.detections.length) return;
+
+        const img = result.image;
+        if (!img || !img.width || !img.height) return;
+        // 预览还没完成布局（容器隐藏 / 图片未解码）时 offset* 为 0，等 load 事件再渲染
+        if (!imagePreview || !imagePreview.offsetWidth || !imagePreview.offsetHeight) return;
+
+        // 图片元素的布局盒：不受父级 transform（弹窗 scale 动画）影响
+        const boxW = imagePreview.offsetWidth;
+        const boxH = imagePreview.offsetHeight;
+
+        // object-contain 的实际渲染比例与居中留白（一般就等于布局盒，留白为 0）
+        const scale = Math.min(boxW / img.width, boxH / img.height);
+        const drawW = img.width * scale;
+        const drawH = img.height * scale;
+
+        // 图层对齐到"图片实际画出来的矩形"，并随图片一起滚动
+        detectBoxLayer.style.left = `${imagePreview.offsetLeft + (boxW - drawW) / 2}px`;
+        detectBoxLayer.style.top = `${imagePreview.offsetTop + (boxH - drawH) / 2}px`;
+        detectBoxLayer.style.width = `${drawW}px`;
+        detectBoxLayer.style.height = `${drawH}px`;
+
+        // 只画最高分那一个框，避免刷屏
+        const box = result.detections[0];
+        const el = document.createElement('div');
+        el.className = 'absolute border-2 border-red-500';
+
+        // 图层与图片同尺寸，百分比坐标天然锁定在图片上，且夹在 0~100% 内防止越界
+        const pct = (value, total) => Math.max(0, Math.min(100, (value / total) * 100));
+        const left = pct(box.x, img.width);
+        const top = pct(box.y, img.height);
+
+        el.style.left = `${left}%`;
+        el.style.top = `${top}%`;
+        el.style.width = `${Math.min(pct(box.w, img.width), 100 - left)}%`;
+        el.style.height = `${Math.min(pct(box.h, img.height), 100 - top)}%`;
+
+        // 框贴近图片顶部时，标签放到框内侧，避免超出图片被裁掉
+        const labelPos = (box.y * scale) < 22
+            ? 'top-0'
+            : '-top-5';
+        el.innerHTML = `<span class="absolute ${labelPos} left-0 bg-red-500 text-white text-xs px-1 whitespace-nowrap">`
+            + `${box.label} ${(box.score * 100).toFixed(0)}%</span>`;
+        detectBoxLayer.appendChild(el);
+    }
+
+    function clearDetectBoxes() {
+        detectBoxLayer.innerHTML = '';
+    }
+
+    // 预览图尺寸变化时重算检测框位置
+    const repositionDetectBoxes = debounce(() => {
+        if (detectState.status === 'pass') renderDetectBoxes(detectState.result);
+    }, 150);
+    window.addEventListener('resize', repositionDetectBoxes);
+    window.addEventListener('orientationchange', repositionDetectBoxes);
+
+    // 显示检测状态：state 为 'checking' | 'pass' | 'warn' | 'skip'
+    function showDetectState(state, result) {
+        detectResultEl.classList.remove('hidden', 'border-green-500', 'text-green-700',
+            'bg-green-50', 'border-yellow-500', 'text-yellow-700', 'bg-yellow-50',
+            'border-gray-300', 'text-gray-500', 'bg-gray-50');
+        detectActionsEl.classList.add('hidden');
+
+        if (state === 'checking') {
+            detectResultEl.classList.add('border-gray-300', 'text-gray-500', 'bg-gray-50');
+            detectResultEl.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>正在检测是否有夜鹭...';
+            clearDetectBoxes();
+            return;
+        }
+
+        if (state === 'pass') {
+            detectResultEl.classList.add('border-green-500', 'text-green-700', 'bg-green-50');
+            const pct = result && result.score ? `（置信度 ${(result.score * 100).toFixed(0)}%）` : '';
+            detectResultEl.innerHTML = `<i class="fa fa-check-circle mr-1"></i>已检出夜鹭${pct}，直接通过`;
+            renderDetectBoxes(result);
+            return;
+        }
+
+        if (state === 'warn') {
+            detectResultEl.classList.add('border-yellow-500', 'text-yellow-700', 'bg-yellow-50');
+            detectResultEl.innerHTML = `<i class="fa fa-exclamation-triangle mr-1"></i>${(result && result.verdict) || '未检出夜鹭，夜师傅今天出什么COS~'}`;
+            detectActionsEl.classList.remove('hidden');
+            clearDetectBoxes();
+            return;
+        }
+
+        // skip：模型不可用，静默放行，不打扰用户
+        detectResultEl.classList.add('hidden');
+        clearDetectBoxes();
+    }
+
+    // 调用后端检测接口
+    async function checkImageDetection(file) {
+        const formData = new FormData();
+        formData.append('image', file);
+
+        const response = await fetch(`${API_BASE_URL}/detect`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            if (response.status === 429) throw new Error('检测过于频繁，请稍后再试');
+            throw new Error('检测请求失败');
+        }
+        return await response.json();
+    }
+
+    // 探测检测服务是否可用；结果缓存，只在首次检测前问一次
+    async function ensureDetectAvailable() {
+        if (detectAvailable !== undefined) return detectAvailable;
+        try {
+            const response = await fetch(`${API_BASE_URL}/detect/status`);
+            const info = await response.json();
+            detectAvailable = !!info.ready;
+            if (!detectAvailable) {
+                console.log('[夜鹭检测] 模型未就绪，已跳过检测:', info.error || '未提供原因');
+            }
+        } catch (error) {
+            // 状态接口都打不通，直接当作不可用，避免每次选图都重试
+            detectAvailable = false;
+            console.log('[夜鹭检测] 无法获取检测服务状态，已跳过检测:', error.message);
+        }
+        return detectAvailable;
+    }
+
+    // 触发一次检测（带竞态保护：用户连续选图时只认最后一次）
+    async function runDetection(file) {
+        const token = ++detectState.token;
+
+        // 模型未就绪：隐藏整行提示，不发请求，让上传流程完全无感
+        if (!(await ensureDetectAvailable())) {
+            if (token !== detectState.token) return;
+            detectState.status = 'skip';
+            detectState.result = null;
+            detectResultEl.classList.add('hidden');
+            detectActionsEl.classList.add('hidden');
+            clearDetectBoxes();
+            return;
+        }
+
+        detectState.status = 'checking';
+        detectResultEl.classList.remove('hidden');
+        showDetectState('checking');
+
+        try {
+            const result = await checkImageDetection(file);
+            if (token !== detectState.token) return;   // 已被新的选图取代
+
+            detectState.result = result;
+
+            // pass=true 但要区分"确认检出"与"服务不可用放行"
+            if (result.pass && result.available === false) {
+                detectState.status = 'skip';
+                showDetectState('skip', result);
+            } else if (result.found) {
+                detectState.status = 'pass';
+                showDetectState('pass', result);
+            } else {
+                detectState.status = 'warn';
+                showDetectState('warn', result);
+            }
+        } catch (error) {
+            if (token !== detectState.token) return;
+            console.error('夜鹭检测失败，静默放行:', error);
+            detectState.status = 'skip';
+            detectState.result = { pass: true, available: false };
+            showDetectState('skip');
+        }
+    }
+
+    // 统一的选图处理：校验 -> 预览 -> 检测
+    function acceptImageFile(file) {
+        if (!file) return;
+
+        const error = validatePickedImage(file);
+        if (error) {
+            showNotification(error, 'error');
+            birdImageInput.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            imagePreview.src = event.target.result;
+            imagePreviewContainer.classList.remove('hidden');
+            imageUploadArea.classList.add('hidden');
+            // 图片就位后立即异步检测，不阻塞用户填写名称
+            runDetection(file);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 处理图片选择
+    function handleImageUpload(e) {
+        acceptImageFile(e.target.files[0]);
+    }
+
+    // 处理拖拽上传
+    function setupDragAndDrop() {
+        // 阻止浏览器默认打开文件的行为，否则拖拽会直接跳走页面
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
+            imageUploadArea.addEventListener(name, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        // 拖入时高亮
+        ['dragenter', 'dragover'].forEach(name => {
+            imageUploadArea.addEventListener(name, () => {
+                imageUploadArea.classList.add('bg-gray-100', 'border-primary');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(name => {
+            imageUploadArea.addEventListener(name, () => {
+                imageUploadArea.classList.remove('bg-gray-100', 'border-primary');
+            });
+        });
+
+        imageUploadArea.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const file = dt && dt.files && dt.files[0];
+            if (!file) return;
+
+            // 同步写入 input.files，保证表单提交时能拿到这张图
+            try {
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                birdImageInput.files = transfer.files;
+            } catch (err) {
+                // 个别旧浏览器不支持赋值，退化为直接使用该文件对象
+                console.warn('无法写入 file input，将直接使用拖拽的文件:', err);
+                window.__droppedFile = file;
+            }
+
+            acceptImageFile(file);
+        });
+    }
+
+    // 移除图片预览
+    function removeImagePreview() {
+        birdImageInput.value = '';
+        window.__droppedFile = null;
+        imagePreviewContainer.classList.add('hidden');
+        imageUploadArea.classList.remove('hidden');
+        // 重置检测状态
+        detectState = { status: 'idle', result: null, token: ++detectState.token };
+        detectResultEl.classList.add('hidden');
+        detectActionsEl.classList.add('hidden');
+        clearDetectBoxes();
+    }
+
+    // 处理鸟类表单提交
+    function handleBirdFormSubmit(e) {
+        e.preventDefault();
+
+        // 额度由服务端判定，这里不再用本地计数拦截：
+        // 本地与服务端只要稍微不同步，就会出现"显示还有次数却传不上去"。
+        // 真的超限时服务端返回 429，下面的 catch 会把具体原因和重置时间提示出来。
+        const name = birdNameInput.value.trim();
+        // 优先用 input 里的文件；拖拽场景下个别浏览器无法写入 input，则用暂存的文件对象
+        const imageFile = birdImageInput.files[0] || window.__droppedFile || null;
+
+        // 前端验证
+        if (!name) {
+            showNotification('请输入鸟类名称');
+            return;
+        }
+        if (name.length > 10) {
+            showNotification('鸟类名称不能超过10个字符');
+            return;
+        }
+
+        const pickedError = validatePickedImage(imageFile);
+        if (pickedError) {
+            showNotification(pickedError, 'error');
+            return;
+        }
+
+        // 检测闸门：模型不可用时静默放行，检出夜鹭直接通过，
+        // 未检出则要求用户显式确认一次（确认后仍走原有上传接口，不做拦截）
+        if (imageFile && detectState.status === 'checking') {
+            showNotification('正在检测是否有夜鹭，请稍候…');
+            return;
+        }
+        if (imageFile && detectState.status === 'warn' && !detectState.confirmed) {
+            showDetectState('warn', detectState.result);
+            showNotification('未检出夜鹭，夜师傅今天出什么COS~ 如仍要上传请点"仍要继续上传"', 'warning');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('name', name);
+        if (imageFile) formData.append('image', imageFile);
+
+        let url, method, operationDesc;
+
+        if (currentBirdId) {
+            url = `${API_BASE_URL}/birds/${currentBirdId}`;
+            method = 'PUT';
+            operationDesc = `更新鸟类: ${name || '未命名'}`;
+        } else {
+            url = `${API_BASE_URL}/birds`;
+            method = 'POST';
+            operationDesc = `新增鸟类: ${name}`;
+        }
+
+        fetchWithLogging(url, method, formData, operationDesc)
+            .then(data => {
+                fetchBirds();
+                fetchBirdCount();
+                closeBirdModal();
+                showNotification(currentBirdId ? '鸟类更新成功' : '鸟类添加成功');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification(error.message || '操作失败');
+            });
+    }
+
+    // 创建鸟类卡片
+    function createBirdCard(bird) {
+        const card = document.createElement('div');
+        card.className = 'bird-card p-0.5 card-hover mb-2.5';
+        card.setAttribute('data-id', bird.id);
+
+        // 判断是否为管理员模式
+        const isAdminMode = checkAdminMode(); // 假设存在一个检查管理员模式的函数
+
+        // 创建图片容器
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'relative';
+
+        // 创建图片元素
+        const img = document.createElement('img');
+        img.src = bird.imageUrl ? `${API_BASE_URL}/images/${bird.imageUrl}` : 'https://picsum.photos/seed/default/400/300';
+        img.alt = bird.name;
+        img.className = 'w-full h-full object-cover';
+
+        // 图片加载完成后计算宽高比并设置容器和卡片样式
+        function updateCardStyles() {
+            const width = img.naturalWidth || 400; // 默认值以防未加载
+            const height = img.naturalHeight || 300;
+            const aspectRatio = width / height;
+
+            // 重置卡片和容器样式
+            card.style.width = '';
+            card.style.height = '';
+            imgContainer.style.width = '';
+            imgContainer.style.height = '';
+            imgContainer.style.maxWidth = '';
+            imgContainer.style.margin = '';
+
+            // 使用 window.innerWidth/Height 更准确反映可见区域
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+            const screenAspectRatio = screenWidth / screenHeight;
+
+            // 宽图：固定高度，限制宽度
+            const isMobile = screenAspectRatio < 0.75 && screenWidth < 768;
+            const containerHeight = isMobile ? 100 : 168;
+            const containerWidth = containerHeight * aspectRatio;
+
+            imgContainer.style.height = `${containerHeight}px`;
+            imgContainer.style.width = `${containerWidth}px`;
+            imgContainer.style.maxWidth = '100%';
+            imgContainer.style.margin = '0 auto';
+        }
+
+        img.onload = updateCardStyles;
+
+        // 错误处理
+        img.onerror = function () {
+            // 使用默认图片并应用相同的宽高比逻辑
+            this.src = 'https://picsum.photos/seed/error/400/300';
+            this.onload(); // 触发默认图片的加载事件
+        };
+
+        // 将图片添加到容器
+        imgContainer.appendChild(img);
+
+        // 设置卡片内容
+        const tierKey = bird.tierKey || 'common';
+        const tierLabel = bird.tier || '普通';
+        const likes = Number.isFinite(bird.likes) ? bird.likes : 0;
+        const liked = Boolean(bird.liked);
+        card.innerHTML = `
+    <div class="p-1">
+        <div class="flex ${isAdminMode ? 'justify-between' : 'justify-center'} items-center">
+            <h3 class="font-bold text-lg md:text-l lg:text-2xl ${!isAdminMode ? 'text-center' : ''} leading-tight md:leading-relaxed">${escapeHtml(bird.name)}</h3>
+            ${isAdminMode ? `
+            <div class="flex space-x-2">
+                <button class="bg-gray-100 p-2 cursor-pointer transition-all hover:bg-gray-200 edit-btn" data-id="${bird.id}">
+                    <i class="fa fa-pencil text-primary"></i>
+                </button>
+                <button class="bg-gray-100 p-2 cursor-pointer transition-all hover:bg-gray-200 delete-btn" data-id="${bird.id}">
+                    <i class="fa fa-trash-o text-red-500"></i>
+                </button>
+            </div>
+            ` : ''}
+        </div>
+        <!-- 稀有度 + 点赞：no-export 保证长图导出与以前一致 -->
+        <div class="flex items-center justify-center gap-2 mt-1 no-export">
+            <span class="text-xs px-1.5 py-0.5 border ${tierStyle(tierKey).badge}">${tierLabel}</span>
+            <button class="like-btn text-xs flex items-center gap-1 text-gray-500 hover:text-red-500 transition-colors"
+                    data-id="${bird.id}" title="点赞（同一 IP 每张图只能赞一次）">
+                <i class="fa ${liked ? 'fa-heart text-red-500' : 'fa-heart-o'}"></i>
+                <span class="like-count">${likes}</span>
+            </button>
+        </div>
+    </div>
+    `;
+
+        // 将图片容器插入到卡片开头
+        card.insertBefore(imgContainer, card.firstChild);
+
+        // 只有管理员模式下才添加按钮事件
+        if (isAdminMode) {
+            const editBtn = card.querySelector('.edit-btn');
+            const deleteBtn = card.querySelector('.delete-btn');
+
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const birdId = parseInt(e.currentTarget.getAttribute('data-id'));
+                openBirdModal('edit', birdId);
+            });
+
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const birdId = parseInt(e.currentTarget.getAttribute('data-id'));
+                deleteBird(birdId);
+            });
+        }
+
+        // 使用防抖函数包装事件处理程序
+        const debouncedUpdate = debounce(updateCardStyles, 150);
+
+        // 监听屏幕方向变化和窗口大小调整
+        window.addEventListener('resize', debouncedUpdate);
+        window.addEventListener('orientationchange', debouncedUpdate);
+
+        // 初始调用一次以设置样式
+        if (img.complete) updateCardStyles();
+
+        // 返回卡片元素
+        return card;
+    }
+
+    // 示例：检查是否为管理员模式的函数（需根据实际情况实现）
+    function checkAdminMode() {
+        return window.isAdmin;
+    }
+
+    // 删除鸟类
+    function deleteBird(birdId) {
+        if (confirm('确定要删除这个鸟类吗？')) {
+            const operationDesc = `删除鸟类: ID#${birdId}`;
+
+            // 删除不占每日上传额度，只受服务端每分钟防刷限流约束
+            fetchWithLogging(`${API_BASE_URL}/birds/${birdId}`, 'DELETE', null, operationDesc)
+                .then(() => {
+                    fetchBirds();
+                    fetchBirdCount();
+                    showNotification('鸟类已删除');
+                })
+                .catch(error => {
+                    console.error('Error deleting bird:', error);
+                    showNotification('删除鸟类失败');
+                });
+        }
+    }
+
+    // 统一的带日志记录的fetch函数
+    async function fetchWithLogging(url, method, body, operationDesc) {
+        const response = await fetch(url, {
+            method,
+            body,
+            headers: authHeaders({
+                'X-Operation-Desc': encodeURIComponent(operationDesc)
+            })
+        });
+
+        // 服务端每次写操作都会回传最新额度。
+        // 注意：失败响应上的数字是"预留时"的快照（服务端随后会把额度退还给用户），
+        // 所以失败请求不采用它，只在成功或 429（此时 remaining 必然是 0）时同步。
+        if (response.ok || response.status === 429) {
+            syncQuotaFromHeaders(response);
+        }
+
+        if (!response.ok) {
+            if (response.status === 429) {
+                // 用服务端文案（含额度与重置时间），并刷新页面上的剩余次数
+                let message = '操作频率超限，请稍后再试';
+                try {
+                    const data = await response.json();
+                    if (data && data.message) message = data.message;
+                } catch (e) {
+                    // 响应不是 JSON，用默认文案
+                }
+                updateRemainingUploads();
+                refreshUploadQuota();
+                throw new Error(message);
+            }
+            // 尽量把后端的具体原因透传给用户（如格式/大小不符），而不是笼统的"操作失败"
+            let detail = null;
+            try {
+                const data = await response.json();
+                detail = data && (data.error || data.message);
+            } catch (e) {
+                // 响应不是 JSON，忽略
+            }
+            // 请求失败了，服务端已退还额度：重新拉一次，纠正界面上的数字
+            refreshUploadQuota();
+            throw new Error(detail || `操作失败（HTTP ${response.status}）`);
+        }
+
+        // 更新本地操作记录（仅作兜底展示）
+        updateLocalOperationLog(operationDesc);
+        updateRemainingUploads();
+        // 服务端才是准的：再拉一次，纠正本地估算的偏差
+        refreshUploadQuota();
+        // 上传成功会奖励 1 张单抽券，顺手刷新抽卡状态
+        refreshGachaTickets();
+
+        return await response.json();
+    }
+
+    // 更新本地操作日志（仅用于服务端额度接口不可用时的兜底展示）
+    function updateLocalOperationLog(operationDesc) {
+        const operations = JSON.parse(localStorage.getItem('birdOperations') || '[]');
+        const today = new Date().toISOString().split('T')[0];
+
+        operations.push({
+            timestamp: new Date().toISOString(),
+            operation: operationDesc,
+            date: today
+        });
+
+        // 保持最近7天的记录
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        const recentOperations = operations.filter(op => {
+            return new Date(op.timestamp) > oneWeekAgo;
+        });
+
+        localStorage.setItem('birdOperations', JSON.stringify(recentOperations));
+    }
+
+    // 处理滚动事件
+    function handleScroll() {
+        if (window.scrollY > 10) {
+            // 分别添加和移除每个类
+            navbar.classList.add('py-2');
+            navbar.classList.remove('py-3');
+        } else {
+            // 分别添加和移除每个类
+            navbar.classList.add('py-3');
+            navbar.classList.remove('py-2');
+        }
+    }
+
+    // 加载更多鸟类
+    function loadMoreBirds() {
+        if (isLoading || !hasMoreData) return;
+
+        loadMoreBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>加载中...';
+
+        // 命令（login/exit）不能当搜索词带出去，否则口令会进 URL 与访问日志
+        const searchTerm = isAdminCommand(searchInput.value) ? '' : searchInput.value.toLowerCase().trim();
+
+        fetchBirds(currentPage + 1, searchTerm)
+            .catch(error => {
+                console.error('加载更多鸟类失败:', error);
+                showNotification('加载更多鸟类失败');
+                loadMoreBtn.innerHTML = '<i class="fa fa-refresh mr-2"></i>加载更多';
+            });
+    }
+
+    // 显示通知
+    function showNotification(message, type = 'info') {
+        notification.textContent = message;
+
+        // 重置所有样式类
+        notification.className = 'fixed bottom-4 right-4 px-4 py-2 border-2 border-black p-4 transform transition-all duration-500 translate-y-20 opacity-0 z-50';
+
+        // 根据类型添加样式
+        switch (type) {
+            case 'error':
+                notification.classList.add('bg-red-500', 'text-white');
+                break;
+            case 'warning':
+                notification.classList.add('bg-yellow-500', 'text-black');
+                break;
+            case 'success':
+                notification.classList.add('bg-green-500', 'text-white');
+                break;
+            default:
+                notification.classList.add('bg-primary', 'text-white');
+        }
+
+        notification.classList.remove('translate-y-20', 'opacity-0');
+
+        setTimeout(() => {
+            notification.classList.add('translate-y-20', 'opacity-0');
+        }, 3000);
+    }
+
+    // 初始化页面
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+../.idea/
+node_modules/
+
+# 运行时生成的IP记录
+ip_operations.json
+operation_log.json
+
+# 点赞与抽卡次数（按 IP 的运行时状态）
+likes.json
+gacha_tickets.json
+
+# 站点配置：config.js 里可能放 ADMIN_KEY_HASH，不入库；模板 config.example.js 入库
+config.js
+
+# npm 本地缓存（沙箱/CI 用，不入库）
+.npm-cache/
+
+# 夜鹭检测模型与运行时缓存
+models/*.onnx
+recognition_cache.json
+recognition_cache.json.tmp

@@ -1,0 +1,14 @@
+{
+  "model": "yelu.onnx",
+  "inputSize": 640,
+  "letterbox": true,
+  "padValue": 114,
+  "normalize": { "ratio": 0.00392156862745098, "mean": [0, 0, 0] },
+  "confThreshold": 0.25,
+  "iouThreshold": 0.45,
+  "maxDetections": 20,
+  "classNames": ["夜鹭"],
+  "nightHeronClassIds": [0],
+  "outputLayout": "auto",
+  "timings": { "warmup": true, "maxConcurrent": 2, "timeoutMs": 5000 }
+}

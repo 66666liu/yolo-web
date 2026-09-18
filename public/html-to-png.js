@@ -42,7 +42,9 @@ async function convertHtmlToPng(element, options = {}) {
                 exportOnlyClasses.forEach(selector => {
                     const elements = clonedDoc.querySelectorAll(selector);
                     elements.forEach(el => {
-                        el.style.display = 'block !important';
+                        // 必须用 setProperty：内联样式不接受 "block !important" 这种写法，
+                        // 旧写法会被浏览器整条丢弃，.export-only 的标题就永远出不来
+                        el.style.setProperty('display', 'block', 'important');
                     });
                 });
 
@@ -50,7 +52,7 @@ async function convertHtmlToPng(element, options = {}) {
                 screenOnlyClasses.forEach(selector => {
                     const elements = clonedDoc.querySelectorAll(selector);
                     elements.forEach(el => {
-                        el.style.display = 'none !important';
+                        el.style.setProperty('display', 'none', 'important');
                     });
                 });
 
@@ -127,7 +129,9 @@ async function convertHtmlToJpg(element, options = {}) {
                 exportOnlyClasses.forEach(selector => {
                     const elements = clonedDoc.querySelectorAll(selector);
                     elements.forEach(el => {
-                        el.style.display = 'block !important';
+                        // 必须用 setProperty：内联样式不接受 "block !important" 这种写法，
+                        // 旧写法会被浏览器整条丢弃，.export-only 的标题就永远出不来
+                        el.style.setProperty('display', 'block', 'important');
                     });
                 });
 
@@ -135,7 +139,7 @@ async function convertHtmlToJpg(element, options = {}) {
                 screenOnlyClasses.forEach(selector => {
                     const elements = clonedDoc.querySelectorAll(selector);
                     elements.forEach(el => {
-                        el.style.display = 'none !important';
+                        el.style.setProperty('display', 'none', 'important');
                     });
                 });
 
@@ -221,6 +225,99 @@ function showNotification(message, type = 'info') {
 }
 
 // 初始化页面事件
+/**
+ * 导出当前图鉴长图（抽卡"终极"大奖）。
+ *
+ * 导出的是**全站图片**，不是页面上已加载的那几页：
+ *   页面脚本的 window.yeluPrepareFullExport 会把 /api/birds 全部分页拉下来，
+ *   另建一块 8 列密排的导出布局，导出完再还原页面。拿不到它时退化为导出当前区域。
+ *
+ * @returns {Promise<{dataUrl: string, width: number, height: number, count: number, scale: number}>}
+ */
+async function exportLongImage() {
+    let target = document.getElementById('bird-gallery-export') || document.body;
+    let cleanup = null;
+    let count = 0;
+
+    const roots = [document.documentElement, target];
+    roots.forEach(el => el && el.classList.add('exporting'));
+    try {
+        // ① 优先准备"全站图片"导出块
+        if (typeof window.yeluPrepareFullExport === 'function') {
+            const prepared = await window.yeluPrepareFullExport();
+            if (prepared && prepared.element) {
+                target = prepared.element;
+                cleanup = prepared.cleanup || null;
+                count = prepared.count || 0;
+                target.classList.add('exporting');
+            }
+        }
+
+        // ② 等所有图片解码完（全站 200 张，给足时间；超时也放行）
+        await waitForImages(target, 20000);
+
+        // ③ 按 canvas 上限挑缩放：手机 Safari 单画布约 16.7M 像素、单边 4096~8192，
+        //    超了就是空白图，所以宁可小一点也必须保证能生成
+        const rect = target.getBoundingClientRect();
+        const scale = pickExportScale(rect.width, rect.height);
+
+        const now = new Date();
+        const stamp = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`
+            + `_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+
+        const dataUrl = await convertHtmlToJpg(target, {
+            scale,
+            excludeClasses: ['no-export', 'footer', 'header'],
+            exportOnlyClasses: ['.export-only'],  // 仅导出时显示的类
+            screenOnlyClasses: ['.screen-only']   // 仅屏幕显示的类
+        });
+
+        downloadPng(dataUrl, `夜鹭页录_全站${count ? count + '张' : ''}_v${stamp}.jpg`);
+
+        return {
+            dataUrl,
+            count,
+            scale,
+            width: Math.round(rect.width * scale),
+            height: Math.round(rect.height * scale)
+        };
+    } finally {
+        if (cleanup) cleanup();
+        roots.forEach(el => el && el.classList.remove('exporting'));
+    }
+}
+
+/** 在手机/桌面 canvas 尺寸上限内挑一个尽量清晰的缩放比 */
+function pickExportScale(width, height) {
+    const MAX_AREA = 12e6;      // 留出安全余量：16.7M 是 iOS 的硬上限，html2canvas 内部还要翻倍占用
+    const MAX_DIM = 8000;       // 单边上限
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
+
+    let scale = Math.min(1.5, Math.sqrt(MAX_AREA / (w * h)), MAX_DIM / Math.max(w, h));
+    if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+    return Math.max(0.6, Math.min(1.5, Number(scale.toFixed(2))));
+}
+
+/** 等容器里的图片都加载完（带超时兜底） */
+function waitForImages(container, timeoutMs = 5000) {
+    const pending = Array.from(container.querySelectorAll('img'))
+        .filter(img => !img.complete)
+        .map(img => new Promise(resolve => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+        }));
+
+    if (!pending.length) return Promise.resolve();
+    return Promise.race([
+        Promise.all(pending),
+        new Promise(resolve => setTimeout(resolve, timeoutMs))
+    ]);
+}
+
+// 暴露给页面脚本（抽卡弹窗里的"导出长图"按钮）
+window.yeluExportLongImage = exportLongImage;
+
 document.addEventListener('DOMContentLoaded', function() {
     // 关于模态框相关事件（保持不变）
     const aboutBtn = document.getElementById('about-btn');
@@ -257,35 +354,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 导出图片按钮事件（新增导出时元素控制）
+    // 页脚"导出图片"按钮：已从页面移除（导出改成抽卡"终极"大奖）。
+    // 这里保留兼容分支，万一以后又把按钮加回来，点了仍然能导出。
     const exportBtn = document.getElementById('export-btn');
     if (exportBtn) {
         exportBtn.addEventListener('click', async function() {
             try {
-                // 获取要导出的区域（示例：导出ID为bird-gallery的元素）
-                let elementToExport = document.getElementById('bird-gallery-export');
-                if (!elementToExport) {
-                    // 无指定区域时导出整个body
-                    elementToExport = document.body;
-                }
-
-                // 生成动态文件名
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = String(now.getMonth() + 1).padStart(2, '0');
-                const day = String(now.getDate()).padStart(2, '0');
-                const hours = String(now.getHours()).padStart(2, '0');
-                const minutes = String(now.getMinutes()).padStart(2, '0');
-                const fileName = `夜鹭页录_v${year}.${month}.${day}_${hours}${minutes}`;
-
-                // 执行导出，传入自定义选项
-                const dataUrl = await convertHtmlToJpg(elementToExport, {
-                    excludeClasses: ['no-export', 'footer', 'header'],
-                    exportOnlyClasses: ['.export-only'],  // 仅导出时显示的类
-                    screenOnlyClasses: ['.screen-only']   // 仅屏幕显示的类
-                });
-
-                downloadPng(dataUrl, `${fileName}.jpg`);
+                await exportLongImage();
                 showNotification('图片导出成功！', 'success');
             } catch (error) {
                 showNotification('导出失败: ' + error.message, 'error');

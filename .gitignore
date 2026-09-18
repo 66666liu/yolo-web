@@ -23,3 +23,15 @@ recognition_cache.json.tmp
 # 图片查重指纹缓存（删掉会重新计算）
 dedup_cache.json
 dedup_cache.json.tmp
+
+# 全站长图（抽卡终极大奖的产物，服务端后台生成；删掉会自动重算）
+long-image/
+
+# Live2D 看板娘：模型来自第三方（版权不明，不宜入库），运行时是第三方库（体积大、可重新下载）
+# 两者都按"自行放入"处理，和上面的 models/*.onnx 一个路子。
+# 缺失时服务照常运行：页面会按 CDN 兜底，全挂则回退静态立绘。
+public/live2d/
+public/vendor/
+
+# Live2D 源模型目录（含 16 套服装，体积大；实际只用到 default.v2 一套，已复制到 public/live2d/）
+live 2d/

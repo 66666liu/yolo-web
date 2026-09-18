@@ -6,7 +6,7 @@
     <title>夜鹭页录</title>
     <link rel="icon" href="images/游隼.jpg" type="image/jpg">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <!-- 不再需要 html2canvas：全站长图改由服务端 sharp 合成 -->
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -59,8 +59,210 @@
             }
         }
     </style>
+    <!-- ===== 动效层（P0/P1）=====
+         全部只动 transform / opacity（走合成层，不触发重排）；手机端与系统"减少动态效果"
+         会自动降级。所有动效层都带 no-export，且导入长图前会被强制落到终态。 -->
+    <style>
+        /* ---------- 图片背景（固定层）+ 底部渐隐到浅色，保证卡片与黑字可读 ----------
+           换背景图：直接替换 public/bg-night.jpg（同名覆盖即可），或改下面的 url()。
+           图加载不出来也不会报错，只是回到原来的浅灰底。 */
+        #bg-photo {
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            pointer-events: none;
+            background-image: url('bg-night.jpg');
+            background-size: cover;
+            background-position: center top;
+            background-repeat: no-repeat;
+        }
+        /* 下半个视口盖一层浅灰渐变：越往下越接近原来的 #f9fafb，画廊密集区不受背景干扰 */
+        #bg-photo::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg,
+                rgba(249, 250, 251, 0) 0%,
+                rgba(249, 250, 251, .20) 34%,
+                rgba(249, 250, 251, .74) 56%,
+                #f9fafb 74%);
+        }
+
+        /* ---------- 羽毛 canvas：从顶端飘落，只画顶部区域，指针穿透 ---------- */
+        #feather-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%;
+            height: min(76vh, 680px);
+            z-index: -1;
+            pointer-events: none;
+            opacity: .85;
+            -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .5) 55%, transparent 94%);
+            mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .5) 55%, transparent 94%);
+        }
+
+        /* ---------- 卡片入场（stagger）：只有 transform/opacity ---------- */
+        .card-reveal { opacity: 0; transform: translateY(14px); }
+        .card-reveal.is-in { animation: yelu-card-in .42s cubic-bezier(.22, .7, .3, 1) both; }
+        @keyframes yelu-card-in {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: none; }
+        }
+
+        /* ---------- 点赞爱心散开 ---------- */
+        .like-burst { position: fixed; pointer-events: none; z-index: 70; width: 0; height: 0; }
+        .like-burst span {
+            position: absolute;
+            font-size: 12px;
+            color: #ef4444;
+            will-change: transform, opacity;
+            animation: yelu-burst .62s ease-out forwards;
+        }
+        @keyframes yelu-burst {
+            from { opacity: 1; transform: translate(0, 0) scale(.6); }
+            to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.15); }
+        }
+
+        /* ---------- 骨架屏（替代转圈） ---------- */
+        .skeleton {
+            background: linear-gradient(90deg, #eceff3 25%, #f7f8fa 37%, #eceff3 63%);
+            background-size: 400% 100%;
+            animation: yelu-shimmer 1.25s linear infinite;
+        }
+        @keyframes yelu-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+        /* ---------- 抽卡翻牌 + 终极奖品 ---------- */
+        #gacha-result { perspective: 900px; }
+        .gacha-flip { animation: yelu-flip .5s cubic-bezier(.2, .8, .3, 1) both; }
+        @keyframes yelu-flip {
+            from { opacity: 0; transform: rotateY(-72deg) translateY(10px) scale(.94); }
+            to { opacity: 1; transform: none; }
+        }
+        /* ---------- 终极大奖：七色炫彩边框（红橙黄绿蓝靛紫，缓慢流动）+ 同步的彩色框内底色 ---------- */
+        .gacha-prize {
+            border: 3px solid transparent;
+            background:
+                /* 内层：与边框同系的极浅七色底，框内文字仍然可读 */
+                linear-gradient(135deg,
+                    rgba(255, 0, 0, .10), rgba(255, 127, 0, .10), rgba(255, 235, 59, .12),
+                    rgba(0, 200, 83, .10), rgba(0, 176, 255, .10), rgba(63, 81, 181, .10), rgba(156, 39, 176, .10)) padding-box,
+                /* 外层：七色循环渐变，420px 一个周期，位移一圈正好无缝衔接 */
+                repeating-linear-gradient(90deg,
+                    #ff0000 0 60px, #ff7f00 60px 120px, #ffeb3b 120px 180px,
+                    #00c853 180px 240px, #00b0ff 240px 300px, #3f51b5 300px 360px, #9c27b0 360px 420px) border-box;
+            background-size: 100% 100%, 420px 100%;
+            background-repeat: no-repeat, repeat;
+            animation: yelu-flip .5s cubic-bezier(.2, .8, .3, 1) both,
+                       yelu-rainbow 3.5s linear infinite,
+                       yelu-prize-glow 1.8s ease-in-out infinite alternate;
+        }
+        @keyframes yelu-rainbow {
+            from { background-position: 0 0, 0 0; }
+            to { background-position: 0 0, 420px 0; }
+        }
+        @keyframes yelu-prize-glow {
+            from { box-shadow: 0 0 0 0 rgba(244, 63, 94, .35); }
+            to { box-shadow: 0 0 24px 7px rgba(168, 85, 247, .50); }
+        }
+        /* 「终极」档的色块/角标：同一套七色边框 + 同样的浅彩底 */
+        .tier-ultimate {
+            border-color: transparent !important;
+            background:
+                linear-gradient(135deg,
+                    rgba(255, 0, 0, .12), rgba(255, 127, 0, .12), rgba(255, 235, 59, .14),
+                    rgba(0, 200, 83, .12), rgba(0, 176, 255, .12), rgba(63, 81, 181, .12), rgba(156, 39, 176, .12)) padding-box,
+                linear-gradient(90deg,
+                    #ff0000, #ff7f00, #ffeb3b, #00c853, #00b0ff, #3f51b5, #9c27b0) border-box;
+            color: #4c1d95;
+        }
+        .gacha-spark { position: absolute; font-size: 14px; color: #f59e0b; animation: yelu-burst .8s ease-out forwards; }
+
+        /* ---------- 触屏/鼠标按下反馈 ---------- */
+        .btn-primary:active, .btn-outline:active, .bird-card:active { transform: scale(.97); }
+        .bird-card { transition: transform .16s ease-out; }
+
+        /* ---------- 抽到终极大奖时的一层金光（不拦截点击） ---------- */
+        body.prize-flash::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            pointer-events: none;
+            background: radial-gradient(circle at 50% 45%, rgba(250, 204, 21, .5), rgba(250, 204, 21, 0) 65%);
+            animation: yelu-prize-flash .9s ease-out forwards;
+        }
+        @keyframes yelu-prize-flash {
+            from { opacity: 0; }
+            25% { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        /* ---------- 导出长图：全部动画强制终态，否则会截到半透明的卡片 ---------- */
+        html.exporting .card-reveal,
+        .exporting .card-reveal,
+        html.exporting .gacha-flip,
+        .exporting .gacha-flip {
+            animation: none !important;
+            opacity: 1 !important;
+            transform: none !important;
+        }
+        html.exporting #feather-canvas,
+        html.exporting #bg-photo { display: none !important; }
+
+        /* ---------- Q 版夜鹭光标（仅桌面端：触屏没有光标，不必加载） ----------
+           图片 32×32，热点设在喙尖 (1,1)，和箭头一个朝向；素材见 public/cursor-yelu*.png */
+        @media (pointer: fine) {
+            html, body { cursor: url('cursor-yelu.png') 1 1, auto; }
+
+            /* 可点区域用"张嘴 + 金星"的那只，提示可点击 */
+            a, button, [role="button"], label, summary,
+            .cursor-pointer, .bird-card, .like-btn, .sort-btn, .btn-primary, .btn-outline,
+            .gacha-flip, #image-upload-area, #remove-image, #gacha-open, #gacha-close,
+            #add-bird-btn, #load-more, #lightbox-close, #gacha-export, #gacha-download {
+                cursor: url('cursor-yelu-point.png') 1 1, pointer !important;
+            }
+            /* 禁用态仍用系统的"禁止"光标，不然会误以为还能点 */
+            button:disabled, .cursor-not-allowed { cursor: not-allowed !important; }
+            /* 输入框保留系统 I 形光标，打字定位更准 */
+            input[type="text"], input[type="search"], textarea { cursor: text; }
+        }
+
+
+
+        /* ---------- 角落 Live2D 看板娘（P3）----------
+           直接复用 imuncle/live2d 项目的官方 Cubism 2 框架（public/live2d-vendor/），
+           跟随/呼吸/眨眼/动作全部由框架的 loadlive2d() 负责，行为和演示站一致。
+           模型：public/live2d/22/22.model.json（Cubism 2.1，默认外观，338KB） */
+        #live2d {
+            position: fixed;
+            left: 0px;                   /* 左距缩减一半（45 → 22），底部仍是 45px */
+            bottom: 45px;
+            z-index: 41;
+            width: 250px;
+            height: 320px;                /* 高度要够：框架按 0.5×画布尺寸缩放模型，太矮会把脚裁掉 */
+            pointer-events: none;         /* 绝不抢页面点击 */
+            opacity: 0;
+            transition: opacity .45s ease-out;
+        }
+        #live2d.is-in { opacity: .82; }   /* 半透明，别太抢眼 */
+        @media (max-width: 767px) { #live2d { display: none !important; } }
+
+        /* ---------- 系统"减少动态效果"：全部关掉 ---------- */
+        @media (prefers-reduced-motion: reduce) {
+            #feather-canvas { display: none !important; }
+            .card-reveal { opacity: 1 !important; transform: none !important; animation: none !important; }
+            .gacha-flip, .gacha-prize, .skeleton, .like-burst span { animation: none !important; }
+            .bird-card { transition: none !important; }
+            body.prize-flash::after { display: none !important; }
+        }
+    </style>
 </head>
 <body class="bg-gray-50 font-sans text-dark min-h-screen flex flex-col">
+<!-- 图片背景 + 飘落羽毛（都是固定层、指针穿透、no-export，不参与长图导出） -->
+<div id="bg-photo" class="no-export" aria-hidden="true"></div>
+<canvas id="feather-canvas" class="no-export" aria-hidden="true"></canvas>
+<!-- 角落 Live2D 看板娘（P3）：官方 Cubism2 框架直接接管这个 canvas，行为由 loadlive2d() 提供 -->
+<canvas id="live2d" class="no-export" aria-hidden="true"></canvas>
 <!-- 导航栏 -->
 <header class="bg-white border-b-2 border-black p-4 fixed w-full z-50 transition-all duration-300" id="navbar">
     <div class="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -75,7 +277,7 @@
 </header>
 
 <!-- 主内容区 -->
-<main class="container mx-auto px-4 pt-24 pb-16 flex-grow">
+<main class="container mx-auto px-4 pt-24 pb-6 flex-grow">
 
     <!-- 鸟类统计 -->
     <div class="mb-4 mt-4 flex flex-row gap-[12px]">
@@ -135,7 +337,7 @@
             </button>
         </div>
         <p id="admin-badge" class="hidden mt-2 text-xs text-red-600">
-            <i class="fa fa-unlock mr-1"></i>管理员模式已开启：卡片上出现 ✏ / 🗑，在搜索框输入 <code>exit</code> 退出
+            <i class="fa fa-unlock mr-1"></i>管理员测试模式：上传不限次数（跳过查重）、抽卡不消耗券、长图导出不扣额度、点赞每次 +1（Shift 点击 -1）；卡片上出现 ✏ / 🗑，搜索框输入 <code>exit</code> 退出
         </p>
     </div>
 
@@ -145,16 +347,28 @@
 
         <!-- 鸟类画廊 -->
         <div id="bird-gallery" class="grid gallery-fixed-cols gap-1 md:gap-8 export-area">
-            <!-- 鸟类卡片将通过JavaScript动态生成 -->
-            <div class="col-span-full text-center py-12">
-                <div class="inline-block animate-spin h-12 w-12 border-b-2 border-primary"></div>
-                <p class="text-gray-500 mt-4">加载鸟类数据中...</p>
+            <!-- 鸟类卡片将通过JavaScript动态生成；这里是首屏骨架屏 -->
+            <div class="p-0.5 mb-2.5 no-export" aria-hidden="true">
+                <div class="skeleton w-full" style="height: 110px;"></div>
+                <div class="skeleton h-3 mt-2 w-2/3 mx-auto"></div>
+            </div>
+            <div class="p-0.5 mb-2.5 no-export" aria-hidden="true">
+                <div class="skeleton w-full" style="height: 110px;"></div>
+                <div class="skeleton h-3 mt-2 w-2/3 mx-auto"></div>
+            </div>
+            <div class="p-0.5 mb-2.5 no-export" aria-hidden="true">
+                <div class="skeleton w-full" style="height: 110px;"></div>
+                <div class="skeleton h-3 mt-2 w-2/3 mx-auto"></div>
+            </div>
+            <div class="p-0.5 mb-2.5 no-export" aria-hidden="true">
+                <div class="skeleton w-full" style="height: 110px;"></div>
+                <div class="skeleton h-3 mt-2 w-2/3 mx-auto"></div>
             </div>
         </div>
     </div>
 
-    <!-- 加载更多 -->
-    <div class="mt-12 text-center no-export">
+    <!-- 加载更多：上下留白收紧，底部不再拖一大块空白（原来 mt-12 + main 的 pb-16） -->
+    <div class="mt-5 text-center no-export" id="load-more-row">
         <button id="load-more" class="btn-primary px-8">
             <i class="fa fa-refresh mr-2"></i>加载更多
         </button>
@@ -183,6 +397,16 @@
             <div class="flex flex-col md:flex-row gap-3 mb-5">
                 <button id="gacha-pull-1" class="btn-primary flex-1 py-3">单抽</button>
                 <button id="gacha-pull-10" class="btn-primary flex-1 py-3">十连抽</button>
+            </div>
+
+            <!-- 终极大奖：全站长图（服务端后台生成）。平时不出现，抽到"终极"档拿到额度后才显示 -->
+            <div id="gacha-export-row" class="hidden mb-5 p-3 border-2 border-yellow-500 bg-yellow-50 flex-col md:flex-row md:items-center gap-3">
+                <button id="gacha-export" class="btn-primary px-4 py-2 whitespace-nowrap">
+                    <i class="fa fa-download mr-1"></i>下载全站长图（剩 <b id="gacha-export-count">0</b> 次）
+                </button>
+                <span id="gacha-export-hint" class="text-xs text-yellow-800">
+                    抽卡"终极"大奖：抽到一次得 1 次下载额度，用一次扣一次（额度不会过期）
+                </span>
             </div>
 
             <div id="gacha-result" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
@@ -281,6 +505,19 @@
 <div id="image-lightbox" class="fixed inset-0 bg-black/80 z-[60] hidden items-center justify-center no-export p-4">
     <img id="lightbox-img" src="" alt="放大查看"
          class="max-w-full max-h-full object-contain bg-white">
+    <!-- 左右翻阅：桌面端点按钮，手机和触屏用滑动 -->
+    <button id="lightbox-prev"
+            class="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white text-5xl leading-none px-2">
+        <i class="fa fa-chevron-left"></i>
+    </button>
+    <button id="lightbox-next"
+            class="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white text-5xl leading-none px-2">
+        <i class="fa fa-chevron-right"></i>
+    </button>
+    <!-- 序号提示：当前浏览到第几张 / 共几张 -->
+    <div id="lightbox-counter"
+         class="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/90 text-base md:text-lg font-bold bg-black/45 px-4 py-1.5 tracking-wider select-none">
+    </div>
     <button id="lightbox-close"
             class="absolute top-4 right-4 text-white/80 hover:text-white text-4xl leading-none">
         <i class="fa fa-times"></i>
@@ -292,9 +529,6 @@
     <div class="container mx-auto px-2">
         <div class="flex flex-col items-center justify-center">
             <div class="mt-1 mb-4 text-center">
-                <button id="export-btn" class="text-black hover:text-gray-500 transition-colors flex items-center mx-auto mt-b text-xl font-bold">
-                    <i class="fa fa-download mr-1"></i> 导出图片
-                </button>
                 <button id="about-btn" class="text-black hover:text-gray-500 transition-colors flex items-center mx-auto text-xl font-bold mt-2.5 mb-1">
                     <i class="fa fa-info-circle mr-1"></i> 关于
                 </button>
@@ -470,6 +704,11 @@
     // 初始化页面
     function init() {
         setupEventListeners();
+        initAmbientEffects();   // 首屏羽毛飘落（reduced-motion / 无 canvas 时自动跳过）
+        // Live2D 看板娘：等首屏加载完再引运行时（约 1.5MB）+ 模型（338KB），
+        // 不和首屏图片抢带宽；渲染成功会自动把静态立绘淡出
+        if (document.readyState === 'complete') initLive2D();
+        else window.addEventListener('load', initLive2D, { once: true });
         initCache().then(() => {
             fetchBirds();
             fetchBirdCount();
@@ -734,12 +973,15 @@
         const gachaDownloadBtn = document.getElementById('gacha-download');
         if (gachaDownloadBtn) gachaDownloadBtn.addEventListener('click', downloadGachaZip);
 
+        const gachaExportBtn = document.getElementById('gacha-export');
+        if (gachaExportBtn) gachaExportBtn.addEventListener('click', downloadLongImage);
+
         // 点赞（事件委托：卡片是动态生成的，且上面那条放大查看的事件会跳过 button）
         birdGallery.addEventListener('click', (e) => {
             const likeBtn = e.target.closest('.like-btn');
             if (!likeBtn) return;
             e.stopPropagation();
-            toggleBirdLike(likeBtn);
+            toggleBirdLike(likeBtn, e.shiftKey);
         });
 
         // 初始化今日剩余上传次数（以服务端返回的额度为准）
@@ -807,12 +1049,7 @@
         }
 
         if (page === 1) {
-            birdGallery.innerHTML = `
-        <div class="col-span-full text-center py-12">
-            <div class="inline-block animate-spin h-12 w-12 border-b-2 border-primary"></div>
-            <p class="text-gray-500 mt-4">加载鸟类数据中...</p>
-        </div>
-        `;
+            birdGallery.innerHTML = skeletonGrid(8);
         }
 
         try {
@@ -871,9 +1108,9 @@
                 return;
             }
 
-            data.birds.forEach(bird => {
+            data.birds.forEach((bird, index) => {
                 const birdCard = createBirdCard(bird);
-                birdGallery.appendChild(birdCard);
+                appendRevealed(birdGallery, birdCard, index);
             });
 
             currentPage = page;
@@ -912,6 +1149,8 @@
                         currentPage = page;
                         hasMoreData = data.hasMore || false;
                         updateLoadMoreButton(data.hasMore || false);
+
+                        // 卡片换了一批 → 右侧序号提示的序列要跟着更新
 
                         // 添加刷新缓存按钮
                         if (page === 1) {
@@ -952,12 +1191,17 @@
         const badge = document.getElementById('admin-badge');
         if (badge) badge.classList.toggle('hidden', !window.isAdmin);
 
-        // 只在状态真的变化时提示一次，否则每次列表刷新都会弹
+        // 只在状态真的变化时处理一次，否则每次列表刷新都会弹
         if (lastAdminUIState === window.isAdmin) return;
         lastAdminUIState = window.isAdmin;
+        // 注意：这里只在"开启"时提示。首次加载时 lastAdminUIState 是 null，
+        // 未登录状态下条件也成立，若加 else 就会在刚打开页面时误弹"已退出管理员模式"。
         if (window.isAdmin) {
-            showNotification('管理员模式已开启（在搜索框输入 exit 退出）', 'success');
+            showNotification('管理员测试模式已开启（上传不限次数、抽卡不消耗券、点赞每次 +1）', 'success');
         }
+        // 登录/退出后额度与抽卡信息都会变（管理员是不限量的），立刻刷新
+        refreshUploadQuota();
+        refreshGachaTickets();
     }
 
     // 辅助函数：显示无数据消息
@@ -1092,8 +1336,8 @@
                 return response.json();
             })
             .then(data => {
-                birdCountElement.textContent = data.type;
-                imageCountElement.textContent = data.count;
+                countUp(birdCountElement, data.type);
+                countUp(imageCountElement, data.count);
             })
             .catch(error => {
                 console.error('Error fetching bird count:', error);
@@ -1168,13 +1412,21 @@
             .replace(/'/g, '&#39;');
     }
 
-    async function toggleBirdLike(btn) {
+    async function toggleBirdLike(btn, shiftKey = false) {
         const id = parseInt(btn.getAttribute('data-id'), 10);
         if (!Number.isInteger(id)) return;
 
+        // 管理员测试模式：每次点击 +1（Shift 点击 -1），可以反复加，不受"一个 IP 只能赞一次"限制
+        const adminTest = Boolean(window.isAdmin);
+
         btn.disabled = true;
         try {
-            const response = await fetch(`${API_BASE_URL}/birds/${id}/like`, { method: 'POST' });
+            const options = { method: 'POST' };
+            if (adminTest) {
+                options.headers = authHeaders({ 'Content-Type': 'application/json' });
+                options.body = JSON.stringify({ delta: shiftKey ? -1 : 1 });
+            }
+            const response = await fetch(`${API_BASE_URL}/birds/${id}/like`, options);
             const data = await response.json().catch(() => null);
             if (!response.ok) throw new Error((data && data.error) || '点赞失败');
 
@@ -1186,6 +1438,12 @@
                 if (iconEl) iconEl.className = data.liked ? 'fa fa-heart text-red-500' : 'fa fa-heart-o';
             });
 
+            // 点赞成功才撒爱心（取消点赞不撒）
+            if (data.liked) spawnLikeBurst(btn);
+            if (adminTest) {
+                showNotification(`管理员测试：点赞 ${shiftKey ? '-1' : '+1'}，当前 ${data.likes} 赞`);
+            }
+
             // 点赞会改变档位与概率表，顺手刷新
             refreshGachaTickets();
         } catch (error) {
@@ -1195,10 +1453,281 @@
         }
     }
 
+    // ==================== 动效（P0/P1） ====================
+    // 原则：
+    //   1. 只动 transform/opacity（走合成层，不触发重排）；
+    //   2. 离屏 / 切到后台 / 滚过首屏就停，不空转；
+    //   3. 系统"减少动态效果"时全关；
+    //   4. 手机端按屏幕面积缩粒子数、DPR 封顶 2；
+    //   5. 导出长图前由 html-to-png.js 加 .exporting 把动画强制落到终态。
+
+    const prefersReducedMotion = () => Boolean(window.matchMedia)
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // ---------- 卡片入场（stagger）：先挂初始隐藏态再追加，避免"闪一下再动画" ----------
+    const revealObserver = ('IntersectionObserver' in window)
+        ? new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add('is-in');
+                observer.unobserve(entry.target);   // 只播一次，播完撤观察，省内存
+            });
+        }, { rootMargin: '0px 0px -6% 0px', threshold: 0.04 })
+        : null;
+
+    function appendRevealed(container, card, index = 0) {
+        if (!card) return;
+        card.classList.add('card-reveal');
+        if (index) card.style.animationDelay = `${(index % 8) * 55}ms`;
+        container.appendChild(card);
+
+        if (!revealObserver) {          // 老浏览器：直接显示，别把卡片藏起来
+            card.classList.add('is-in');
+            return;
+        }
+        revealObserver.observe(card);
+    }
+
+    // ---------- 骨架屏（替代整块转圈） ----------
+    function skeletonGrid(count = 8) {
+        return Array.from({ length: count }, () => `
+            <div class="p-0.5 mb-2.5 no-export" aria-hidden="true">
+                <div class="skeleton w-full" style="height: 110px;"></div>
+                <div class="skeleton h-3 mt-2 w-2/3 mx-auto"></div>
+            </div>`).join('');
+    }
+
+    // ---------- 数字滚动（顶部"已收录"计数） ----------
+    function countUp(el, target, duration = 620) {
+        if (!el) return;
+        const to = Number(target) || 0;
+        const from = parseInt(el.textContent, 10) || 0;
+        if (prefersReducedMotion() || from === to || !window.requestAnimationFrame) {
+            el.textContent = String(to);
+            return;
+        }
+        const started = performance.now();
+        const tick = now => {
+            const p = Math.min(1, (now - started) / duration);
+            const eased = 1 - Math.pow(1 - p, 3);          // easeOutCubic
+            el.textContent = String(Math.round(from + (to - from) * eased));
+            if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }
+
+    // ---------- 点赞爱心散开（一次性，900ms 后自清理，不留 DOM） ----------
+    function spawnLikeBurst(btn) {
+        if (!btn || prefersReducedMotion()) return;
+        const rect = btn.getBoundingClientRect();
+        const layer = document.createElement('div');
+        layer.className = 'like-burst no-export';
+        layer.style.left = `${rect.left + rect.width / 2}px`;
+        layer.style.top = `${rect.top + rect.height / 2}px`;
+
+        const glyphs = ['♥', '♥', '✦', '♥', '♥'];
+        glyphs.forEach((glyph, i) => {
+            const span = document.createElement('span');
+            span.textContent = glyph;
+            const angle = (-90 + (i - (glyphs.length - 1) / 2) * 32) * Math.PI / 180;
+            const dist = 22 + Math.random() * 18;
+            span.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+            span.style.setProperty('--dy', `${Math.sin(angle) * dist}px`);
+            span.style.animationDelay = `${i * 22}ms`;
+            layer.appendChild(span);
+        });
+
+        document.body.appendChild(layer);
+        setTimeout(() => layer.remove(), 900);
+    }
+
+    // ---------- 首屏羽毛飘落（只画顶部区域，指针穿透） ----------
+    function initAmbientEffects() {
+        const canvas = document.getElementById('feather-canvas');
+        if (!canvas) return;
+        if (prefersReducedMotion()) { canvas.style.display = 'none'; return; }
+
+        const ctx = canvas.getContext && canvas.getContext('2d');
+        if (!ctx) { canvas.style.display = 'none'; return; }
+
+        const state = { feathers: [], w: 0, h: 0, raf: 0, last: 0, running: false };
+
+        const spawnFeather = anywhere => ({
+            x: Math.random() * state.w,
+            y: anywhere ? Math.random() * state.h : -26,
+            size: 6 + Math.random() * 7,                 // 羽毛半长（px）
+            speed: 0.022 + Math.random() * 0.05,         // px/ms → 约 22~72 px/s，慢慢飘
+            sway: 10 + Math.random() * 22,               // 横向摆幅
+            phase: Math.random() * Math.PI * 2,          // 摆动相位
+            swaySpeed: 0.0006 + Math.random() * 0.0009,  // 摆动频率
+            angle: Math.random() * Math.PI,              // 自身旋转角
+            spin: (Math.random() - 0.5) * 0.0013,        // 缓慢翻转
+            alpha: 0.34 + Math.random() * 0.5
+        });
+
+        const resize = () => {
+            const cssW = canvas.clientWidth || window.innerWidth;
+            const cssH = canvas.clientHeight || Math.min(window.innerHeight * 0.76, 680);
+            // DPR 封顶 2；画布面积很大时再降到 1.5，桌面端少一半填充量
+            const cap = cssW * cssH > 900000 ? 1.5 : 2;
+            const dpr = Math.min(window.devicePixelRatio || 1, cap);
+            state.w = cssW;
+            state.h = cssH;
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            // 羽毛比雨滴大，数量按面积算并封顶 72
+            const count = Math.max(18, Math.min(72, Math.round((cssW * cssH) / 18000)));
+            state.feathers = Array.from({ length: count }, () => spawnFeather(true));
+        };
+
+        // 一片羽毛 = 两段对称弧线 + 一根羽轴，2 条路径，开销很小
+        const drawFeather = (feather, time) => {
+            const x = feather.x + Math.sin(feather.phase + time * feather.swaySpeed) * feather.sway;
+            const y = feather.y;
+            const s = feather.size;
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(feather.angle);
+            ctx.globalAlpha = feather.alpha;
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.beginPath();
+            ctx.moveTo(0, -s);
+            ctx.quadraticCurveTo(s * 0.8, -s * 0.1, 0, s);
+            ctx.quadraticCurveTo(-s * 0.8, -s * 0.1, 0, -s);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(148, 163, 184, .85)';
+            ctx.lineWidth = 0.9;
+            ctx.beginPath();
+            ctx.moveTo(0, -s * 0.95);
+            ctx.lineTo(0, s * 1.2);
+            ctx.stroke();
+
+            ctx.restore();
+        };
+
+        const draw = time => {
+            state.raf = requestAnimationFrame(draw);
+            if (time - state.last < 33) return;        // ~30fps：手机少一半耗电
+            const delta = Math.min(50, state.last ? time - state.last : 33);
+            state.last = time;
+
+            ctx.clearRect(0, 0, state.w, state.h);
+            for (const feather of state.feathers) {
+                feather.y += feather.speed * delta;
+                feather.angle += feather.spin * delta;
+                if (feather.y - feather.size > state.h) Object.assign(feather, spawnFeather(false));
+                drawFeather(feather, time);
+            }
+        };
+
+        const start = () => {
+            if (state.running) return;
+            state.running = true;
+            state.last = 0;
+            state.raf = requestAnimationFrame(draw);
+        };
+        const stop = () => {
+            if (!state.running) return;
+            state.running = false;
+            cancelAnimationFrame(state.raf);
+            ctx.clearRect(0, 0, state.w, state.h);
+        };
+
+        // 切到后台、或滚过首屏就停：没人看的时候一帧都不跑
+        const sync = () => {
+            const visible = !document.hidden && window.scrollY < window.innerHeight * 1.5;
+            if (visible) start(); else stop();
+        };
+
+        document.addEventListener('visibilitychange', sync);
+        window.addEventListener('scroll', sync, { passive: true });
+        window.addEventListener('resize', debounce(resize, 200));
+        window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+
+        resize();
+        sync();
+    }
+
+
+    // ==================== 角落 Live2D 看板娘（P3） ====================
+    // 直接复用 imuncle/live2d 项目的官方 Cubism 2 框架，不自己写跟随/眨眼/呼吸。
+    // 那个演示站的第一个模型就是本模型（model/22/model.default.json），用法只有一行：
+    //     loadlive2d(canvasId, modelJsonPath)
+    // 行为（身体/视线跟随鼠标、呼吸、眨眼、idle 动作、拖动、点击）全部由框架内部实现，
+    // 所以和演示站的表现一致，也不需要我们再调任何系数或参数。
+    //
+    // 两个文件都在 public/live2d-vendor/：
+    //   LAppDefine.js —— 配置（CANVAS_ID / MODELS，已精简为只留本模型）
+    //   live2d.js     —— 框架 + Cubism 2 运行时（151KB，无任何 npm 依赖）
+    const LIVE2D_MODEL = 'live2d/22/22.model.json';
+
+    function initLive2D() {
+        const canvas = document.getElementById('live2d');
+        if (!canvas) return;
+
+        // 手机端不加载：4 张 1024² 贴图对手机不划算（与静态立绘同一断点）
+        if (!window.matchMedia || !window.matchMedia('(min-width: 768px)').matches) return;
+        if (!window.WebGLRenderingContext) {
+            console.warn('[live2d] 无 WebGL，保持静态立绘');
+            return;
+        }
+
+        // 框架按 canvas.width/height 计算视图矩阵，所以显式定死这个尺寸
+        // （宽度正好容纳模型：两侧留一点余量；高度按 0.5 的缩放率算出来刚好放下角色）。
+        // 不用 clientWidth 之类动态量，避免和 CSS 尺寸/DPR 互相打架。
+        canvas.width = 250;
+        canvas.height = 320;
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const el = document.createElement('script');
+                el.async = false;            // 保持插入顺序：LAppDefine 必须在 live2d.js 之前
+                el.onload = () => resolve(src);
+                el.onerror = () => reject(new Error('脚本加载失败: ' + src));
+                el.src = src;
+                document.head.appendChild(el);
+            });
+        }
+
+        (async () => {
+            // 顺序照演示页：先配置，再框架
+            await loadScript('live2d-vendor/LAppDefine.js');
+            await loadScript('live2d-vendor/live2d.js');
+
+            if (typeof window.loadlive2d !== 'function') {
+                throw new Error('loadlive2d 未挂到 window（框架未就绪）');
+            }
+
+            // 一行接入，行为全部由框架负责
+            window.loadlive2d('live2d', LIVE2D_MODEL);
+
+            // 起来之后淡入，并把静态立绘淡出
+            requestAnimationFrame(() => {
+                canvas.classList.add('is-in');
+            });
+
+            console.log('[live2d] 已用官方 Cubism2 框架加载：' + LIVE2D_MODEL);
+        })().catch(err => {
+            // 失败就保持静态立绘，不留半截画面
+            const msg = err && err.message ? err.message : String(err);
+            console.warn('[live2d] 加载失败，已回退静态立绘：' + msg);
+            canvas.classList.remove('is-in');
+        });
+    }
+
+
     // ==================== 抽卡 ====================
     // 概率与档位全部由服务端计算（按点赞数排名切档），前端只做展示与调用，
     // 抽卡结果也由服务端产生，前端改不了概率。
     const TIER_STYLE = {
+        // 终极 = 长图导出（奖品档）：彩虹边框，单独用自定义类，不走 Tailwind 调色板
+        ultimate: { badge: 'tier-ultimate', ring: 'tier-ultimate' },
         legendary: { badge: 'border-yellow-500 text-yellow-700 bg-yellow-50', ring: 'border-yellow-500' },
         epic: { badge: 'border-purple-500 text-purple-700 bg-purple-50', ring: 'border-purple-500' },
         rare: { badge: 'border-blue-500 text-blue-700 bg-blue-50', ring: 'border-blue-500' },
@@ -1233,6 +1762,7 @@
     let gachaInfo = null;          // 最近一次 /api/gacha/tickets 的结果（券 + 概率表）
     let gachaBatch = [];           // 本批抽到的图，用于打包下载
     let gachaGrantNotified = false;
+    let longImageStatus = null;    // 全站长图状态（/api/long-image/status）
 
     // ==================== 站点配置（GET /api/config） ====================
     // 尺寸上限、抽卡赠送数量、档位占比等都在后端 config.js 里，前端文案与校验跟着它走，
@@ -1282,6 +1812,7 @@
             panel.classList.add('scale-100', 'opacity-100');
         }, 10);
         refreshGachaTickets();
+        refreshLongImageStatus();   // 顺便看一下全站长图有没有生成好
     }
 
     function closeGachaModal() {
@@ -1306,8 +1837,20 @@
 
         const pull1Btn = document.getElementById('gacha-pull-1');
         const pull10Btn = document.getElementById('gacha-pull-10');
-        if (pull1Btn) pull1Btn.disabled = tickets.single < 1;
-        if (pull10Btn) pull10Btn.disabled = !(tickets.ten >= 1 || tickets.single >= 10);
+        // 管理员测试模式：没券也能抽（服务端也不会扣券）
+        const adminTest = Boolean(window.isAdmin);
+        if (pull1Btn) pull1Btn.disabled = !adminTest && tickets.single < 1;
+        if (pull10Btn) pull10Btn.disabled = !adminTest && !(tickets.ten >= 1 || tickets.single >= 10);
+
+        // 终极大奖：有长图导出额度才显示这一行（管理员测试模式始终显示，且不扣额度）
+        const exportRow = document.getElementById('gacha-export-row');
+        const exportCountEl = document.getElementById('gacha-export-count');
+        const credits = tickets.exportCredits || 0;
+        if (exportCountEl) exportCountEl.textContent = String(credits);
+        if (exportRow) {
+            exportRow.classList.toggle('hidden', credits < 1 && !adminTest);
+            exportRow.classList.toggle('flex', credits >= 1 || adminTest);
+        }
 
         const ratesEl = document.getElementById('gacha-rates');
         if (ratesEl && pool) {
@@ -1316,9 +1859,13 @@
             ratesEl.innerHTML = pool.rates.map(item => {
                 const style = tierStyle(item.key);
                 const share = shareByKey.get(item.key);
+                // 奖品档（终极）不是鸟图，别显示"N 张"，直接说清奖品是什么
+                const detail = item.prize
+                    ? '全站长图'
+                    : `${item.count} 张${share === undefined ? '' : ` · 池占比 ${(share * 100).toFixed(0)}%`}`;
                 return `<div class="border-2 ${style.ring} ${style.badge} px-2 py-1 text-center">
                     <div class="font-bold">${item.label} ${(item.rate * 100).toFixed(0)}%</div>
-                    <div class="opacity-70">${item.count} 张${share === undefined ? '' : ` · 池占比 ${(share * 100).toFixed(0)}%`}</div>
+                    <div class="opacity-70">${detail}</div>
                 </div>`;
             }).join('') + `<div class="col-span-2 md:col-span-4 text-gray-500">
                 共 ${pool.total} 张图参与抽卡。点赞越多的图档位越高、单张越难抽到（同一 IP 对每张图只能赞一次）
@@ -1351,14 +1898,31 @@
 
         gachaBatch = Array.isArray(results) ? results.slice() : [];
 
-        container.innerHTML = gachaBatch.map(item => {
+        container.innerHTML = gachaBatch.map((item, index) => {
             const style = tierStyle(item.tierKey);
+            const delay = `style="animation-delay: ${Math.min(index * 70, 420)}ms"`;
+
+            // 终极大奖：长图导出（不是鸟图，没有图片可展示）；边框是彩虹渐变
+            if (item.prize) {
+                return `<div class="gacha-prize relative p-2 flex flex-col items-center justify-center text-center min-h-[140px]" ${delay}>
+                    <span class="absolute top-1 left-1 text-[10px] px-1 border ${style.badge}">${item.tierLabel}</span>
+                    <i class="fa fa-download text-3xl my-3" style="color: #a855f7;"></i>
+                    <p class="font-bold" style="color: #9a3412;">长图导出</p>
+                    <p class="text-[11px] mt-1" style="color: #b45309;">获得 1 次导出额度</p>
+                    <span class="gacha-spark" style="left: 12%; top: 18%;">✦</span>
+                    <span class="gacha-spark" style="right: 14%; top: 26%; animation-delay: .12s; color: #22c55e;">✦</span>
+                    <span class="gacha-spark" style="left: 24%; bottom: 16%; animation-delay: .22s; color: #3b82f6;">✦</span>
+                </div>`;
+            }
+
             const src = item.imageUrl ? `${API_BASE_URL}/images/${item.imageUrl}` : '';
             const name = escapeHtml(item.name);
-            return `<div class="border-2 ${style.ring} p-1 bg-white">
+            const rare = ['ultimate', 'legendary', 'epic'].includes(item.tierKey);
+            return `<div class="gacha-flip relative border-2 ${style.ring} p-1 bg-white" ${delay}>
                 <div class="relative">
                     <img src="${src}" alt="${name}" class="w-full h-24 md:h-28 object-cover bg-gray-100">
                     <span class="absolute top-1 left-1 text-[10px] px-1 border ${style.badge}">${item.tierLabel}</span>
+                    ${rare ? '<span class="gacha-spark" style="right: 8%; top: 8%;">✦</span>' : ''}
                 </div>
                 <div class="flex items-center justify-between mt-1 text-xs">
                     <span class="truncate" title="${name}">${name}</span>
@@ -1384,7 +1948,7 @@
         try {
             const response = await fetch(`${API_BASE_URL}/gacha/pull`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ count })
             });
             const data = await response.json().catch(() => null);
@@ -1401,9 +1965,21 @@
             renderGachaInfo();
             renderGachaResults(data.results);
 
-            const best = data.results.find(item => item.tierKey === 'legendary')
+            const prizeHit = Boolean(data.prize && data.prize.hits > 0);
+            const best = data.results.find(item => item.prize)
+                || data.results.find(item => item.tierKey === 'legendary')
                 || data.results.find(item => item.tierKey === 'epic');
-            showNotification(best ? `${best.tierLabel}！抽到了「${best.name}」` : '抽卡完成');
+
+            if (prizeHit) {
+                // 终极大奖：一层金光 + 明确告知拿到几次导出额度
+                if (!prefersReducedMotion()) {
+                    document.body.classList.add('prize-flash');
+                    setTimeout(() => document.body.classList.remove('prize-flash'), 1000);
+                }
+                showNotification(`终极大奖！长图导出额度 +${data.prize.credits}（共 ${data.prize.total} 次）`, 'success');
+            } else {
+                showNotification(best ? `${best.tierLabel}！抽到了「${best.name}」` : '抽卡完成');
+            }
         } catch (error) {
             showNotification(error.message || '抽卡失败');
         } finally {
@@ -1412,8 +1988,96 @@
         }
     }
 
+    // 说明：这里原来有一段"浏览器把全站图片排成密排网格再 html2canvas 截图"的实现。
+    // 它有两个硬伤：截之前要把页面换成密排网格（用户看到页面被刷掉），
+    // 而且受 canvas 尺寸上限限制只能缩得很小、可读性差。
+    // 现在改为服务端后台用 sharp 合成（见 longimage.js），前端只负责下载文件。
+
+    // ==================== 终极大奖：下载全站长图 ====================
+    // 长图由服务端后台用 sharp 合成（longimage.js），版面参照原来的导出效果：
+    // 两行标题 + 4 列卡片 + 居中加粗名字，全站图片都在里面。
+    // 前端只做一件事：把生成好的文件下载下来。下载即扣 1 次额度（服务端扣）。
+
+    async function downloadLongImage() {
+        const credits = (gachaInfo && gachaInfo.tickets && gachaInfo.tickets.exportCredits) || 0;
+        const adminTest = Boolean(window.isAdmin);
+        if (credits < 1 && !adminTest) {
+            showNotification('全站长图是抽卡"终极"大奖，抽到才有', 'warning');
+            return;
+        }
+
+        const button = document.getElementById('gacha-export');
+        if (button) button.disabled = true;
+        try {
+            showNotification('正在获取全站长图…', 'info');
+            const response = await fetch(`${API_BASE_URL}/gacha/export/long-image`, { headers: authHeaders() });
+
+            // 服务端还在生成（或图鉴刚变过正在重算）
+            if (response.status === 202) {
+                const data = await response.json().catch(() => null);
+                showNotification((data && data.error) || '全站长图正在后台生成，请稍后再试', 'warning');
+                refreshLongImageStatus();
+                return;
+            }
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error((data && data.error) || `下载失败（HTTP ${response.status}）`);
+            }
+
+            const remainingHeader = response.headers.get('X-Export-Credits-Remaining');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `夜鹭页录_全站长图_${new Date().toISOString().slice(0, 10)}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+            if (gachaInfo && gachaInfo.tickets && remainingHeader !== null) {
+                gachaInfo.tickets.exportCredits = Number(remainingHeader);
+            }
+            renderGachaInfo();
+            showNotification(`全站长图已开始下载（${(blob.size / 1048576).toFixed(1)}MB）`
+                + (adminTest ? '' : `，还剩 ${remainingHeader} 次`), 'success');
+        } catch (error) {
+            console.error('下载全站长图失败：', error);
+            showNotification(error.message || '下载失败，请重试', 'error');
+        } finally {
+            if (button) button.disabled = false;
+            renderGachaInfo();
+        }
+    }
+
+    // 全站长图状态：弹窗里显示"已就绪 / 后台生成中"
+    async function refreshLongImageStatus() {
+        const hint = document.getElementById('gacha-export-hint');
+        if (!hint) return;
+        try {
+            const response = await fetch(`${API_BASE_URL}/long-image/status`, { cache: 'no-store' });
+            const info = await response.json();
+            longImageStatus = info;
+            if (!info.ready || info.stale) {
+                hint.textContent = info.building
+                    ? '全站长图正在后台生成，稍等一下就好…'
+                    : '全站长图还没生成好，点下载会自动开始生成';
+                return;
+            }
+            hint.textContent = `全站长图已就绪：全站 ${info.count} 张、`
+                + `${info.width}×${info.height}、约 ${(info.bytes / 1048576).toFixed(1)}MB（抽到一次可下载一次）`;
+        } catch (error) {
+            console.warn('获取全站长图状态失败：', error.message);
+        }
+    }
+
     async function downloadGachaZip() {
-        if (!gachaBatch.length) return;
+        // 终极奖（长图导出）没有图可打包，先把这类结果剔除
+        const packable = gachaBatch.filter(item => item.id);
+        if (!packable.length) {
+            showNotification('本批没有可打包的图片（抽到的是长图导出大奖）', 'warning');
+            return;
+        }
         const button = document.getElementById('gacha-download');
         const originalHtml = button ? button.innerHTML : '';
         if (button) {
@@ -1453,27 +2117,92 @@
     }
 
     // ==================== 图片放大查看 ====================
+    // 除了放大，还支持左右翻阅并在右下/底部显示"第几张 / 共几张"，
+    // 图片序列直接取图鉴里当前的 <img>，所以和排序、筛选、已加载数量天然保持一致。
+    const lightboxPrev = document.getElementById('lightbox-prev');
+    const lightboxNext = document.getElementById('lightbox-next');
+    const lightboxCounter = document.getElementById('lightbox-counter');
+    let lightboxList = [];      // 当前图鉴里的图片地址（按页面顺序）
+    let lightboxIndex = -1;
+
+    // 收集图鉴里当前所有图片（跳过管理员编辑/删除按钮里的图标）
+    function collectGalleryImages() {
+        return Array.from(birdGallery.querySelectorAll('img'))
+            .filter(img => !img.closest('button'))
+            .map(img => img.currentSrc || img.src)
+            .filter(Boolean);
+    }
+
+    function renderLightbox() {
+        if (lightboxIndex < 0 || lightboxIndex >= lightboxList.length) return;
+        lightboxImg.src = lightboxList[lightboxIndex];
+        lightboxCounter.textContent = (lightboxIndex + 1) + ' / ' + lightboxList.length;
+        // 到头了就把对应的按钮淡掉，明确告诉用户没有更多了
+        const atStart = lightboxIndex === 0;
+        const atEnd = lightboxIndex === lightboxList.length - 1;
+        lightboxPrev.style.opacity = atStart ? '.25' : '1';
+        lightboxNext.style.opacity = atEnd ? '.25' : '1';
+        lightboxPrev.style.pointerEvents = atStart ? 'none' : 'auto';
+        lightboxNext.style.pointerEvents = atEnd ? 'none' : 'auto';
+    }
+
+    // src 用当前点击的图片地址来定位序号，避免依赖调用方的下标
     function openLightbox(src) {
         if (!src) return;
-        lightboxImg.src = src;
+        lightboxList = collectGalleryImages();
+        // 同一个地址可能出现多次，优先取当前点击的那一张
+        lightboxIndex = lightboxList.indexOf(src);
+        if (lightboxIndex < 0) {
+            lightboxList = [src];
+            lightboxIndex = 0;
+        }
+        renderLightbox();
         imageLightbox.classList.remove('hidden');
         imageLightbox.classList.add('flex');
+    }
+
+    function stepLightbox(delta) {
+        if (!lightboxList.length) return;
+        const next = lightboxIndex + delta;
+        if (next < 0 || next >= lightboxList.length) return;   // 到头就不循环，避免"转了一圈"的错觉
+        lightboxIndex = next;
+        renderLightbox();
     }
 
     function closeLightbox() {
         imageLightbox.classList.add('hidden');
         imageLightbox.classList.remove('flex');
         lightboxImg.src = '';
+        lightboxList = [];
+        lightboxIndex = -1;
     }
 
     lightboxClose.addEventListener('click', closeLightbox);
+    lightboxPrev.addEventListener('click', (e) => { e.stopPropagation(); stepLightbox(-1); });
+    lightboxNext.addEventListener('click', (e) => { e.stopPropagation(); stepLightbox(1); });
     // 点击遮罩空白处关闭（点图片本身不关）
     imageLightbox.addEventListener('click', (e) => {
         if (e.target === imageLightbox) closeLightbox();
     });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !imageLightbox.classList.contains('hidden')) closeLightbox();
+        if (imageLightbox.classList.contains('hidden')) return;
+        if (e.key === 'Escape') closeLightbox();
+        else if (e.key === 'ArrowLeft') stepLightbox(-1);
+        else if (e.key === 'ArrowRight') stepLightbox(1);
     });
+
+    // 触屏滑动切换（手机上没有方向键，靠左右滑）
+    let swipeStartX = null;
+    imageLightbox.addEventListener('touchstart', (e) => {
+        swipeStartX = e.changedTouches[0].clientX;
+    }, { passive: true });
+    imageLightbox.addEventListener('touchend', (e) => {
+        if (swipeStartX === null) return;
+        const dx = e.changedTouches[0].clientX - swipeStartX;
+        swipeStartX = null;
+        if (Math.abs(dx) < 40) return;          // 太小的位移当成误触
+        stepLightbox(dx > 0 ? -1 : 1);          // 右滑看上一张，左滑看下一张
+    }, { passive: true });
 
     // 预览图点击放大
     imagePreview.classList.add('cursor-zoom-in');
@@ -1549,7 +2278,7 @@
     // 拉取服务端额度；失败则退回本地估算
     async function refreshUploadQuota() {
         try {
-            const response = await fetch(`${API_BASE_URL}/upload-quota`, { cache: 'no-store' });
+            const response = await fetch(`${API_BASE_URL}/upload-quota`, { cache: 'no-store', headers: authHeaders() });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             serverQuota = await response.json();
         } catch (error) {

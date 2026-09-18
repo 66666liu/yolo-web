@@ -11,6 +11,7 @@ const cors = require('cors');
 const sharp = require('sharp');
 const detector = require('./detector');
 const dedup = require('./dedup');
+const longimage = require('./longimage');
 
 // ==================== 配置 ====================
 // 优先级：环境变量 > config.js > config.example.js 里的默认值。
@@ -524,6 +525,12 @@ function discardUploadOnError(req, res, next) {
 async function uploadQuotaGuard(req, res, next) {
     const clientIp = getClientIp(req);
 
+    // 管理员测试模式：不占每日上传额度，也不写额度记录（方便反复测试上传/查重/检测）
+    if (isAdminRequest(req)) {
+        console.log(`[admin] 测试模式：跳过每日上传额度（ip=${clientIp}）`);
+        return next();
+    }
+
     let reserved;
     try {
         if (countsAsUpload(req)) {
@@ -619,6 +626,37 @@ function isLikedBy(likes, birdId, ip) {
     return Boolean(ips && ips.includes(ip));
 }
 
+let adminLikeSeq = 0;
+
+/**
+ * 管理员测试模式：用 admin-test:xxx 虚拟 IP 加减赞。
+ * 好处是可以反复点（不受"一个 IP 只能赞一次"限制），且完全不动真实用户的点赞记录；
+ * 减赞也只减虚拟的那部分，不会误删别人的赞。
+ */
+async function adjustAdminLikes(birdId, delta) {
+    return await withStateLock(async () => {
+        const likes = await loadLikes();
+        const key = String(birdId);
+        const ips = likes[key] || (likes[key] = []);
+
+        if (delta > 0) {
+            for (let i = 0; i < delta; i++) ips.push(`admin-test:${++adminLikeSeq}`);
+        } else {
+            let removed = 0;
+            for (let i = ips.length - 1; i >= 0 && removed < -delta; i--) {
+                if (String(ips[i]).startsWith('admin-test:')) {
+                    ips.splice(i, 1);
+                    removed++;
+                }
+            }
+        }
+
+        if (!ips.length) delete likes[key];
+        await persistLikes();
+        return { likes: ips.length };
+    });
+}
+
 async function toggleLike(ip, birdId) {
     return await withStateLock(async () => {
         const likes = await loadLikes();
@@ -668,7 +706,10 @@ function normalizeTierConfig(rawTiers) {
             key: typeof tier.key === 'string' && tier.key ? tier.key : `tier${index + 1}`,
             label: typeof tier.label === 'string' && tier.label ? tier.label : `档位${index + 1}`,
             rate,
-            share
+            share,
+            // prize = 这一档抽到的是"特殊奖品"而不是鸟图（目前只有 longImage = 长图导出）。
+            // 这类档位不参与鸟图分池，池子里就它自己这一项。
+            prize: typeof tier.prize === 'string' ? tier.prize : ''
         });
     });
     if (!cleaned.length) return normalizeTierConfig(fallback);
@@ -705,6 +746,12 @@ function buildGachaPool(likes) {
     let cursor = 0;
 
     RARITY_TIERS.forEach((tier, index) => {
+        // 奖品档（"终极·长图导出"）不占鸟图池：池子里只有它自己这一项，cursor 也不动，
+        // 鸟图全部分给其余档位（最后一档照旧兜底吃掉余数）。
+        if (tier.prize) {
+            pool[tier.key] = [{ prize: tier.prize, tier }];
+            return;
+        }
         const end = index === RARITY_TIERS.length - 1
             ? total
             : Math.min(total, cursor + Math.round(tier.share * total));
@@ -739,6 +786,22 @@ function drawGacha(pool, count) {
         }
 
         const [entry] = chosen.list.splice(Math.floor(Math.random() * chosen.list.length), 1);
+
+        // 奖品档：抽到的是"长图导出"这类奖品本身，不是某张鸟图
+        if (entry.prize) {
+            picks.push({
+                id: null,
+                name: entry.prize === LONG_IMAGE_PRIZE ? '长图导出' : entry.prize,
+                imageUrl: null,
+                likes: 0,
+                tierKey: chosen.tier.key,
+                tierLabel: chosen.tier.label,
+                rate: chosen.tier.rate,
+                prize: entry.prize
+            });
+            continue;
+        }
+
         picks.push({
             id: entry.bird.id,
             name: entry.bird.name,
@@ -759,7 +822,8 @@ function gachaPoolSummary(pool) {
             key: tier.key,
             label: tier.label,
             rate: tier.rate,
-            count: pool[tier.key].length
+            prize: tier.prize || '',
+            count: pool[tier.key] ? pool[tier.key].length : 0
         }))
     };
 }
@@ -771,6 +835,10 @@ const DAILY_SINGLE_TICKETS = asInt(GACHA_SETTING.dailySingleTickets, 2);
 const DAILY_TEN_TICKETS = asInt(GACHA_SETTING.dailyTenTickets, 1);
 const TEN_PULL_SINGLE_COST = asPositiveInt(GACHA_SETTING.tenPullSingleCost, 10);
 const GACHA_ZIP_MAX_IMAGES = asPositiveInt(GACHA_SETTING.zipMaxImages, 10);
+// 终极大奖：长图导出。导出本身仍在浏览器里用 html2canvas 完成（见 public/html-to-png.js），
+// 服务端只记账 —— 抽到"终极"档加额度，用一次扣一次。额度存在同一个 gacha_tickets.json 里。
+const LONG_IMAGE_PRIZE = 'longImage';
+const EXPORT_CREDITS_PER_HIT = asPositiveInt(GACHA_SETTING.exportCreditsPerHit, 1);
 let ticketsCache = null;
 
 async function loadTickets() {
@@ -809,7 +877,9 @@ function ticketSnapshot(state) {
     return {
         single: Math.max(0, state.single | 0),
         ten: Math.max(0, state.ten | 0),
-        uploads: Math.max(0, state.uploads | 0)
+        uploads: Math.max(0, state.uploads | 0),
+        // 长图导出额度（终极大奖）。注意：不随每日券重置，抽到就一直留着
+        exportCredits: Math.max(0, state.exportCredits | 0)
     };
 }
 
@@ -843,43 +913,63 @@ async function grantUploadTicket(ip) {
     });
 }
 
-/** 扣券 + 抽卡（同一把锁内完成，避免并发把券扣成负数） */
-async function pullGacha(ip, count) {
+/** 扣券 + 抽卡（同一把锁内完成，避免并发把券扣成负数）
+ *  options.unlimited = 管理员测试模式：不消耗任何券，想抽多少抽多少 */
+async function pullGacha(ip, count, options = {}) {
+    const unlimited = options.unlimited === true;
     return await withStateLock(async () => {
         const tickets = await loadTickets();
         const { state, granted } = ticketStateOf(tickets, ip, dayKeyOf());
         if (granted) await persistTickets();
 
-        if (count === 10) {
-            if ((state.ten | 0) >= 1) {
-                state.ten = (state.ten | 0) - 1;
-            } else if ((state.single | 0) >= TEN_PULL_SINGLE_COST) {
-                state.single = (state.single | 0) - TEN_PULL_SINGLE_COST;   // 没有十连券时允许用单抽券抵
+        if (!unlimited) {
+            if (count === 10) {
+                if ((state.ten | 0) >= 1) {
+                    state.ten = (state.ten | 0) - 1;
+                } else if ((state.single | 0) >= TEN_PULL_SINGLE_COST) {
+                    state.single = (state.single | 0) - TEN_PULL_SINGLE_COST;   // 没有十连券时允许用单抽券抵
+                } else {
+                    return {
+                        ok: false,
+                        message: `十连抽需要 1 张十连券（或用 ${TEN_PULL_SINGLE_COST} 张单抽券）`,
+                        tickets: ticketSnapshot(state)
+                    };
+                }
             } else {
-                return {
-                    ok: false,
-                    message: `十连抽需要 1 张十连券（或用 ${TEN_PULL_SINGLE_COST} 张单抽券）`,
-                    tickets: ticketSnapshot(state)
-                };
+                if ((state.single | 0) < 1) {
+                    return {
+                        ok: false,
+                        message: '没有抽卡次数了：每日登录送 2 次单抽 + 1 次十连，每上传 1 张图片再送 1 次单抽',
+                        tickets: ticketSnapshot(state)
+                    };
+                }
+                state.single = (state.single | 0) - 1;
             }
-        } else {
-            if ((state.single | 0) < 1) {
-                return {
-                    ok: false,
-                    message: '没有抽卡次数了：每日登录送 2 次单抽 + 1 次十连，每上传 1 张图片再送 1 次单抽',
-                    tickets: ticketSnapshot(state)
-                };
-            }
-            state.single = (state.single | 0) - 1;
+            await persistTickets();
         }
-        await persistTickets();
 
         const likes = await loadLikes();
         const { pool } = buildGachaPool(likes);
+
+        const picks = drawGacha(pool, count);
+
+        // 抽到"终极·长图导出"：直接发导出额度（同一把锁里记账，不会并发丢次数）
+        const prizeHits = picks.filter(item => item.prize === LONG_IMAGE_PRIZE).length;
+        if (prizeHits > 0) {
+            state.exportCredits = (state.exportCredits | 0) + prizeHits * EXPORT_CREDITS_PER_HIT;
+            await persistTickets();
+        }
+
         return {
             ok: true,
-            results: drawGacha(pool, count),
+            results: picks,
             tickets: ticketSnapshot(state),
+            prize: {
+                key: LONG_IMAGE_PRIZE,
+                hits: prizeHits,
+                credits: prizeHits * EXPORT_CREDITS_PER_HIT,
+                total: Math.max(0, state.exportCredits | 0)
+            },
             pool: gachaPoolSummary(pool)
         };
     });
@@ -1133,6 +1223,15 @@ dedup.configure({
     cacheFile: DEDUP_CACHE_FILE
 });
 
+// 全站长图（抽卡终极大奖）：后台用 sharp 合成，产物放在仓库根目录的 long-image/ 下，
+// 故意不放进 public/ —— 那样知道 URL 的人就能白拿，奖品就没意义了，
+// 下载必须走 /api/gacha/export/long-image 由服务端扣额度。
+longimage.configure({
+    imagesDir: path.join(__dirname, 'public', 'images'),
+    outFile: path.join(__dirname, 'long-image', 'yelu-gallery.jpg'),
+    metaFile: path.join(__dirname, 'long-image', 'meta.json')
+});
+
 // 写操作的轻量防刷限流：删除、仅改名不占每日上传额度，改由这里兜底，
 // 同时挡住"反复提交非法图片"这类不消耗额度但会吃 CPU 的请求。
 const writeBurstLimiter = rateLimit({
@@ -1177,8 +1276,12 @@ app.get('/api/upload-quota', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
         const snapshot = await getQuotaSnapshot(getClientIp(req));
-        applyQuotaHeaders(res, snapshot);
-        res.json(snapshot);
+        // 管理员测试模式：额度显示为"不限"，方便一直测
+        const payload = isAdminRequest(req)
+            ? { ...snapshot, unlimited: true, adminTest: true, limit: null, remaining: null }
+            : snapshot;
+        applyQuotaHeaders(res, payload);
+        res.json(payload);
     } catch (error) {
         console.error('Error reading upload quota:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -1297,6 +1400,17 @@ app.post('/api/birds/:id/like', writeBurstLimiter, async (req, res) => {
         if (!Number.isInteger(id) || !birds.some(bird => bird.id === id)) {
             return res.status(404).json({ error: 'Bird not found' });
         }
+
+        // 管理员测试模式：点击 = +1、按住 Shift 点击 = -1，可以反复加减（不受一个 IP 只能赞一次限制）
+        if (isAdminRequest(req)) {
+            const raw = parseInt((req.body && req.body.delta) ?? 1, 10);
+            const delta = Number.isFinite(raw) && raw !== 0 ? Math.max(-10, Math.min(10, raw)) : 1;
+            const adminResult = await adjustAdminLikes(id, delta);
+            res.set('Cache-Control', 'no-store');
+            console.log(`[admin] 测试模式点赞 bird=${id} delta=${delta} -> ${adminResult.likes}`);
+            return res.json({ id, likes: adminResult.likes, liked: delta > 0, adminTest: true, delta });
+        }
+
         const result = await toggleLike(getClientIp(req), id);
         res.set('Cache-Control', 'no-store');
         res.json({ id, likes: result.likes, liked: result.liked });
@@ -1338,10 +1452,12 @@ app.post('/api/gacha/pull', writeBurstLimiter, async (req, res) => {
             return res.status(409).json({ error: '奖池里还没有图片，先上传几张吧' });
         }
         const count = Number(req.body && req.body.count) === 10 ? 10 : 1;
-        const result = await pullGacha(getClientIp(req), count);
+        const adminTest = isAdminRequest(req);
+        const result = await pullGacha(getClientIp(req), count, { unlimited: adminTest });
         if (!result.ok) {
             return res.status(403).json({ error: result.message, tickets: result.tickets });
         }
+        if (adminTest) result.adminTest = true;
         res.json(result);
     } catch (error) {
         console.error('Error pulling gacha:', error);
@@ -1520,6 +1636,86 @@ app.post('/api/dedup/check', detectLimiter, uploadMemory.single('image'), async 
     }
 });
 
+// 注意：原来这里是"浏览器截长图 + 服务端只扣额度"的 POST /api/gacha/export/consume。
+// 现在长图由服务端后台合成，下载与扣额度合并进 GET /api/gacha/export/long-image，
+// 所以这个接口已删除（前端也不再调用）。
+
+// 抽卡终极大奖：下载全站长图（服务端后台合成好的那张）
+// - 还没生成好 / 图鉴变了 → 202 并顺手在后台开始生成
+// - 没有额度不给（管理员测试模式除外）；成功即扣 1 次额度
+// - 产物不在 public/ 下，只能从这里拿，所以"抽到才有"是站得住的
+app.get('/api/gacha/export/long-image', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+        const adminTest = isAdminRequest(req);
+        const info = longimage.status(birds);
+
+        if (!info.ready || info.stale) {
+            longimage.startBuildIfStale(birds);
+            return res.status(202).json({
+                error: info.ready
+                    ? '图鉴有新变化，全站长图正在重新生成，请稍后再试'
+                    : '全站长图正在后台生成，请稍后再试',
+                building: true,
+                count: info.count
+            });
+        }
+
+        // 先扣额度再发文件：连点两次也不会扣一份发两份
+        let remaining = 0;
+        if (!adminTest) {
+            const result = await withStateLock(async () => {
+                const tickets = await loadTickets();
+                const { state } = ticketStateOf(tickets, getClientIp(req), dayKeyOf());
+                const left = Math.max(0, state.exportCredits | 0);
+                if (left < 1) return { ok: false, remaining: left };
+                state.exportCredits = left - 1;
+                await persistTickets();
+                return { ok: true, remaining: state.exportCredits };
+            });
+            if (!result.ok) {
+                return res.status(403).json({
+                    error: '没有长图导出额度了：这是抽卡"终极"大奖，抽到才有',
+                    exportCredits: result.remaining
+                });
+            }
+            remaining = result.remaining;
+        } else {
+            const tickets = await loadTickets();
+            remaining = Math.max(0, (tickets[getClientIp(req)] || {}).exportCredits | 0);
+        }
+
+        const stamp = new Date().toISOString().slice(0, 10);
+        console.log(`[longimage] 全站长图下载 ip=${getClientIp(req)} ${info.width}×${info.height} `
+            + `adminTest=${adminTest} 剩余额度=${remaining}`);
+        res.set('Content-Type', 'image/jpeg');
+        res.set('Content-Disposition', `attachment; filename="yelu-gallery-${stamp}.jpg"`);
+        res.set('X-Export-Credits-Remaining', String(remaining));
+        res.sendFile(longimage.filePath());
+    } catch (error) {
+        console.error('Error serving long image:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// 全站长图状态（前端显示"已就绪/生成中"）
+app.get('/api/long-image/status', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(longimage.status(birds));
+});
+
+// 手动重建全站长图（管理员）
+app.post('/api/long-image/build', writeBurstLimiter, requireAdmin, async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+        longimage.startBuildIfStale(birds);
+        res.json({ ok: true, building: true, status: longimage.status(birds) });
+    } catch (error) {
+        console.error('Error rebuilding long image:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // 获取单只鸟类
 app.get('/api/birds/:id', async (req, res) => {
     try {
@@ -1578,8 +1774,9 @@ app.post('/api/birds', writeBurstLimiter, upload.single('image'), discardUploadO
 
         // 图鉴查重：已有同图直接拒收。非 2xx 不消耗每日额度，也不留孤儿图片。
         // 查重本身出错（图片坏了、缓存写不动）时不拦上传，只记日志。
+        // 管理员测试模式：跳过查重，方便反复上传同一张图测试流程。
         let dedupResult = null;
-        if (DEDUP_ENABLED && req.file && req.file.path) {
+        if (DEDUP_ENABLED && req.file && req.file.path && !isAdminRequest(req)) {
             try {
                 dedupResult = await dedup.checkFile(req.file.path, birds, null);
                 if (dedupResult.duplicate) {
@@ -1608,6 +1805,7 @@ app.post('/api/birds', writeBurstLimiter, upload.single('image'), discardUploadO
 
         birds.unshift(newBird);
         await saveData();
+        longimage.scheduleRebuild(birds);   // 图鉴变了，后台把全站长图重算一张
 
         // 新图指纹入索引，省得下次查重再解码一遍
         if (dedupResult && dedupResult.fingerprint) {
@@ -1649,8 +1847,9 @@ app.put('/api/birds/:id', writeBurstLimiter, requireAdmin, upload.single('image'
         }
 
         // 图鉴查重：编辑换图时同样不许换成已有图片（排除自己，重传本图不算重复）
+        // 管理员测试模式：跳过查重
         let dedupResult = null;
-        if (DEDUP_ENABLED && req.file && req.file.path) {
+        if (DEDUP_ENABLED && req.file && req.file.path && !isAdminRequest(req)) {
             try {
                 dedupResult = await dedup.checkFile(req.file.path, birds, id);
                 if (dedupResult.duplicate) {
@@ -1690,6 +1889,7 @@ app.put('/api/birds/:id', writeBurstLimiter, requireAdmin, upload.single('image'
 
         birds[birdIndex] = updatedBird;
         await saveData();
+        longimage.scheduleRebuild(birds);
 
         // 索引跟着换图走：旧图摘掉、新图补上
         if (replacedImage) dedup.forget(replacedImage);
@@ -1736,6 +1936,7 @@ app.delete('/api/birds/:id', writeBurstLimiter, requireAdmin, uploadQuotaGuard, 
 
         birds.splice(birdIndex, 1);
         await saveData();
+        longimage.scheduleRebuild(birds);
 
         res.json({
             message: 'Bird deleted successfully',
@@ -1800,13 +2001,21 @@ async function startServer() {
                     : 'default');
             row('管理员会话', `${ADMIN_SESSION_HOURS} 小时`, sourceLabel(ADMIN_SESSION_HOURS_SETTING));
             row('抽卡：每日赠送', `${DAILY_SINGLE_TICKETS} 单抽 + ${DAILY_TEN_TICKETS} 十连`, 'config.js:gacha');
-            row('抽卡：档位', RARITY_TIERS.map(t => `${t.label}${(t.rate * 100).toFixed(0)}%/${(t.share * 100).toFixed(0)}%`).join(' '), 'config.js:gacha.tiers');
+            row('抽卡：档位', RARITY_TIERS.map(t => t.prize
+                ? `${t.label}${(t.rate * 100).toFixed(0)}%（奖品：长图导出）`
+                : `${t.label}${(t.rate * 100).toFixed(0)}%/${(t.share * 100).toFixed(0)}%`).join(' '), 'config.js:gacha.tiers');
+            row('长图导出（终极奖）', `每抽中 1 次 +${EXPORT_CREDITS_PER_HIT} 次额度`, 'config.js:gacha.exportCreditsPerHit');
         });
 
         // 后台预热夜鹭检测模型；失败不影响服务启动，检测接口会自动降级为静默放行
         detector.init()
             .then(() => console.log('[detector] 夜鹭检测已就绪'))
             .catch(err => console.warn('[detector] 预热失败，检测将降级为静默放行：', err.message));
+
+        // 后台补一张全站长图（抽卡终极大奖用）。缺图/图鉴变了才重算，算完写进 long-image/
+        longimage.ensureFresh(birds)
+            .then(info => console.log(`[longimage] 全站长图就绪：${info.count} 张，${info.width}×${info.height}`))
+            .catch(err => console.warn('[longimage] 全站长图生成失败，抽到时会自动重试：', err.message));
 
         // 后台预热图鉴指纹缓存：首次启动要为全部图鉴算一遍（之后走 dedup_cache.json）
         if (DEDUP_ENABLED) {

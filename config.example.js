@@ -57,14 +57,16 @@ module.exports = {
         dailyTenTickets: 1,         // 每日首次访问赠送的十连券
         tenPullSingleCost: 10,      // 没有十连券时，一次十连消耗多少张单抽券
         zipMaxImages: 10,           // 一次最多打包下载几张（一个十连的量）
+        exportCreditsPerHit: 1,     // 抽到"终极"大奖一次给几次长图导出额度
 
-        // 稀有度档位：按点赞数排名从上到下切档
-        //   rate  = 抽到该档位的概率（总和会被自动归一到 1）
-        //   share = 该档位占奖池的比例（点赞最高的 share 部分进第一档，总和归一到 1）
-        // 默认：传说=点赞最高 2%（概率 5%）、史诗=接下来 8%（15%）、稀有=30%（30%）、普通=60%（50%）
+        // 稀有度档位：rate = 抽到该档位的概率、share = 该档位占鸟图池的比例（各自会自动归一到 1）
+        // prize: 'longImage' = 这一档抽到的不是鸟图，而是"长图导出"这个终极大奖：
+        //   它不占鸟图池（池子里就它自己这一项），share 只用于概率归一化，不影响鸟图怎么分。
+        //   长图导出按钮平时不出现，抽到终极后按额度出现在抽卡弹窗里。
         // 想加档位：在这里加一项即可（前端颜色会按档位顺序自动分配；
         //           想在页面里用固定配色，就去 public/index.html 的 TIER_STYLE 里补上 key）
         tiers: [
+            { key: 'ultimate', label: '终极', rate: 0.01, share: 0.005, prize: 'longImage' },
             { key: 'legendary', label: '传说', rate: 0.05, share: 0.02 },
             { key: 'epic', label: '史诗', rate: 0.15, share: 0.08 },
             { key: 'rare', label: '稀有', rate: 0.30, share: 0.30 },

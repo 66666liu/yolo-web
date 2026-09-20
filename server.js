@@ -1805,7 +1805,8 @@ app.post('/api/birds', writeBurstLimiter, upload.single('image'), discardUploadO
 
         birds.unshift(newBird);
         await saveData();
-        longimage.scheduleRebuild(birds);   // 图鉴变了，后台把全站长图重算一张
+        // 全站长图不在这里重算：它是抽卡"终极"才有的稀有奖品，绝大多数时间没人下载，
+        // 图鉴一变就在后台烧 2 秒纯属浪费。改由下载接口按需触发（见 /api/gacha/export/long-image）。
 
         // 新图指纹入索引，省得下次查重再解码一遍
         if (dedupResult && dedupResult.fingerprint) {
@@ -1889,7 +1890,6 @@ app.put('/api/birds/:id', writeBurstLimiter, requireAdmin, upload.single('image'
 
         birds[birdIndex] = updatedBird;
         await saveData();
-        longimage.scheduleRebuild(birds);
 
         // 索引跟着换图走：旧图摘掉、新图补上
         if (replacedImage) dedup.forget(replacedImage);
@@ -1936,7 +1936,6 @@ app.delete('/api/birds/:id', writeBurstLimiter, requireAdmin, uploadQuotaGuard, 
 
         birds.splice(birdIndex, 1);
         await saveData();
-        longimage.scheduleRebuild(birds);
 
         res.json({
             message: 'Bird deleted successfully',

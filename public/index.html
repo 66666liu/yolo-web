@@ -138,14 +138,15 @@
             from { opacity: 0; transform: rotateY(-72deg) translateY(10px) scale(.94); }
             to { opacity: 1; transform: none; }
         }
-        /* ---------- 终极大奖：七色炫彩边框（红橙黄绿蓝靛紫，缓慢流动）+ 同步的彩色框内底色 ---------- */
+        /* ---------- 终极大奖：七色炫彩边框（红橙黄绿蓝靛紫，缓慢流动）+ 同步的彩色框内底色 ----------
+           内层必须是不透明的浅色：之前写成 rgba(...,.10)，底下那层高饱和的 border-box 渐变会从
+           半透明处透上来，整块卡面变成高饱和彩虹、字全糊了。用不透明色才真的只留边框。 */
         .gacha-prize {
             border: 3px solid transparent;
             background:
-                /* 内层：与边框同系的极浅七色底，框内文字仍然可读 */
+                /* 内层：与边框同系的极浅七色底，不透明，正好盖住下面那层，只在 3px 边框处露出彩虹 */
                 linear-gradient(135deg,
-                    rgba(255, 0, 0, .10), rgba(255, 127, 0, .10), rgba(255, 235, 59, .12),
-                    rgba(0, 200, 83, .10), rgba(0, 176, 255, .10), rgba(63, 81, 181, .10), rgba(156, 39, 176, .10)) padding-box,
+                    #fef2f2, #fff7ed, #fefce8, #f0fdf4, #f0f9ff, #eef2ff, #faf5ff) padding-box,
                 /* 外层：七色循环渐变，420px 一个周期，位移一圈正好无缝衔接 */
                 repeating-linear-gradient(90deg,
                     #ff0000 0 60px, #ff7f00 60px 120px, #ffeb3b 120px 180px,
@@ -164,16 +165,28 @@
             from { box-shadow: 0 0 0 0 rgba(244, 63, 94, .35); }
             to { box-shadow: 0 0 24px 7px rgba(168, 85, 247, .50); }
         }
-        /* 「终极」档的色块/角标：同一套七色边框 + 同样的浅彩底 */
+        /* 「终极」档的色块/角标：同一套七色边框 + 同样的浅彩底（内层同样必须不透明） */
         .tier-ultimate {
             border-color: transparent !important;
             background:
                 linear-gradient(135deg,
-                    rgba(255, 0, 0, .12), rgba(255, 127, 0, .12), rgba(255, 235, 59, .14),
-                    rgba(0, 200, 83, .12), rgba(0, 176, 255, .12), rgba(63, 81, 181, .12), rgba(156, 39, 176, .12)) padding-box,
+                    #fef2f2, #fff7ed, #fefce8, #f0fdf4, #f0f9ff, #eef2ff, #faf5ff) padding-box,
                 linear-gradient(90deg,
                     #ff0000, #ff7f00, #ffeb3b, #00c853, #00b0ff, #3f51b5, #9c27b0) border-box;
             color: #4c1d95;
+        }
+        /* 「终极」档的档位名：六色渐变字。之前用 violet-700 纯色，和「史诗」的紫几乎分不出来；
+           改成"一条彩虹"后，它和任何单色档位都是一眼之别。末位落在品红(不是紫)，离史诗更远。
+           色标全部取 700 档：最差对比度 4.5:1，11px 小字也达 WCAG AA（600 档的黄色只有 2.7:1）。
+           必须挂在**子元素**上 —— 挂在带 .tier-ultimate 的同一个元素上会和它的
+           background（负责彩虹边框）互相覆盖。 */
+        .tier-ultimate-text {
+            background-image: linear-gradient(90deg,
+                #be123c, #c2410c, #a16207, #15803d, #0369a1, #a21caf);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
         }
         .gacha-spark { position: absolute; font-size: 14px; color: #f59e0b; animation: yelu-burst .8s ease-out forwards; }
 
@@ -268,7 +281,7 @@
     <div class="container mx-auto px-4 py-3 flex justify-between items-center">
         <div class="flex items-center space-x-2">
             <i class="fa fa-dove text-primary text-5xl"></i>
-            <h1 class="text-lg md:text-2xl lg:text-3xl font-bold text-primary">常见鸟类辨识图鉴</h1>
+            <h1 class="text-lg md:text-2xl lg:text-3xl font-bold text-primary">夜鹭拟态与分辨图鉴</h1>
         </div>
         <button id="add-bird-btn" class="btn-primary flex items-center">
             <i class="fa fa-plus mr-2"></i>添加
@@ -380,7 +393,7 @@
     <div id="gacha-panel"
          class="bg-white shadow-2xl w-full max-w-2xl transform transition-all duration-300 scale-95 opacity-0 max-h-[90vh] overflow-y-auto">
         <div class="flex justify-between items-center p-5 border-b">
-            <h2 class="text-2xl font-bold">夜鹭抽卡</h2>
+            <h2 class="text-2xl font-bold">夜鹭抽卡模拟器</h2>
             <button id="gacha-close" class="text-gray-500 hover:text-black text-3xl leading-none">&times;</button>
         </div>
         <div class="p-5">
@@ -392,7 +405,8 @@
                 </span>
             </div>
 
-            <div id="gacha-rates" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs"></div>
+            <!-- 五个档位一行摆平，方框大小一致（2 列/4 列那种排法会让第 5 个掉到下一行、宽度也不一样） -->
+            <div id="gacha-rates" class="grid grid-cols-5 gap-1.5 md:gap-2 mb-4"></div>
 
             <div class="flex flex-col md:flex-row gap-3 mb-5">
                 <button id="gacha-pull-1" class="btn-primary flex-1 py-3">单抽</button>
@@ -550,9 +564,11 @@
         <div class="p-6">
             <p>
                 本网站源于“夜鹭拟态图鉴”梗图，
-                图片来自各大社群与用户上传。<br>
+                所有图片均来自各大社群与用户上传。
                 简单而言，这里名为“夜鹭”的
-                都不是夜鹭，而其它的都是夜鹭。<br>
+                都不是夜鹭，其它的则都是夜鹭。<br>
+                本网站仅作为观鸟（夜鹭）爱好者交流分享，无任何商业营利行为。
+                若图片或素材涉嫌侵权，请联系管理员删除！<br>
                 <br>
                 期待你的上传！<br>
                 <a href="https://space.bilibili.com/29602970" class="text-l font-bold underline">另可点击此处联系开发者</a>
@@ -571,6 +587,18 @@
 <!-- 通知组件 -->
 <div id="notification"
      class="fixed bottom-4 right-4 bg-primary text-white px-4 py-2 border-2 border-black p-4 transform transition-all duration-500 translate-y-20 opacity-0 z-50"></div>
+
+<!-- 到顶部 / 到底部：右下角常驻，位置抬到 bottom-20 让开下方的通知条 -->
+<div id="scroll-jump" class="fixed right-4 bottom-20 z-40 flex flex-col gap-2 no-export">
+    <button type="button" id="scroll-to-top" title="到顶部" aria-label="到顶部"
+            class="w-11 h-11 bg-white border-2 border-black text-black hover:bg-primary hover:text-white transition-colors flex items-center justify-center">
+        <i class="fa fa-angle-double-up text-xl"></i>
+    </button>
+    <button type="button" id="scroll-to-bottom" title="到底部" aria-label="到底部"
+            class="w-11 h-11 bg-white border-2 border-black text-black hover:bg-primary hover:text-white transition-colors flex items-center justify-center">
+        <i class="fa fa-angle-double-down text-xl"></i>
+    </button>
+</div>
 
 <!-- 加载遮罩 -->
 <div id="loadingOverlay" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden no-export">
@@ -983,6 +1011,9 @@
             e.stopPropagation();
             toggleBirdLike(likeBtn, e.shiftKey);
         });
+
+        // 到顶部 / 到底部
+        setupScrollJump();
 
         // 初始化今日剩余上传次数（以服务端返回的额度为准）
         refreshUploadQuota();
@@ -1725,25 +1756,33 @@
     // ==================== 抽卡 ====================
     // 概率与档位全部由服务端计算（按点赞数排名切档），前端只做展示与调用，
     // 抽卡结果也由服务端产生，前端改不了概率。
+    // badge = 带边框底色的方框/角标类；text = 只有字色的类（终极是七色渐变字），
+    // 用在概率方框、结果卡角标、以及"本批 N 张：传说×1…"这种纯文字处
     const TIER_STYLE = {
         // 终极 = 长图导出（奖品档）：彩虹边框，单独用自定义类，不走 Tailwind 调色板
-        ultimate: { badge: 'tier-ultimate', ring: 'tier-ultimate' },
-        legendary: { badge: 'border-yellow-500 text-yellow-700 bg-yellow-50', ring: 'border-yellow-500' },
-        epic: { badge: 'border-purple-500 text-purple-700 bg-purple-50', ring: 'border-purple-500' },
-        rare: { badge: 'border-blue-500 text-blue-700 bg-blue-50', ring: 'border-blue-500' },
-        common: { badge: 'border-gray-300 text-gray-600 bg-gray-50', ring: 'border-gray-300' }
+        ultimate: { badge: 'tier-ultimate', ring: 'tier-ultimate', text: 'tier-ultimate-text' },
+        legendary: { badge: 'border-yellow-500 text-amber-600 bg-yellow-50', ring: 'border-yellow-500', text: 'text-amber-600' },
+        epic: { badge: 'border-purple-500 text-purple-600 bg-purple-50', ring: 'border-purple-500', text: 'text-purple-600' },
+        rare: { badge: 'border-blue-500 text-blue-600 bg-blue-50', ring: 'border-blue-500', text: 'text-blue-600' },
+        common: { badge: 'border-gray-300 text-gray-500 bg-gray-50', ring: 'border-gray-300', text: 'text-gray-500' }
     };
     // 在 config.js 里加了新档位时，按档位顺序自动分配配色，不会一律显示成灰色
     const TIER_PALETTE = [
-        'border-yellow-500 text-yellow-700 bg-yellow-50',
-        'border-purple-500 text-purple-700 bg-purple-50',
-        'border-blue-500 text-blue-700 bg-blue-50',
-        'border-gray-300 text-gray-600 bg-gray-50',
-        'border-green-500 text-green-700 bg-green-50',
-        'border-pink-500 text-pink-700 bg-pink-50'
+        { badge: 'border-yellow-500 text-amber-600 bg-yellow-50', text: 'text-amber-600' },
+        { badge: 'border-purple-500 text-purple-600 bg-purple-50', text: 'text-purple-600' },
+        { badge: 'border-blue-500 text-blue-600 bg-blue-50', text: 'text-blue-600' },
+        { badge: 'border-gray-300 text-gray-500 bg-gray-50', text: 'text-gray-500' },
+        { badge: 'border-green-500 text-green-600 bg-green-50', text: 'text-green-600' },
+        { badge: 'border-pink-500 text-pink-600 bg-pink-50', text: 'text-pink-600' }
     ];
     let tierStyleMap = new Map();
     const tierStyle = key => tierStyleMap.get(key) || TIER_STYLE[key] || TIER_STYLE.common;
+
+    // 档位顺序 = config.js 里 tiers 的顺序（由稀有到常见），排序展示时直接用这个名次
+    function tierRankMap() {
+        return new Map(((appConfig && appConfig.gacha && appConfig.gacha.tiers) || [])
+            .map((tier, index) => [tier.key, index]));
+    }
 
     function rebuildTierStyles() {
         const tiers = (appConfig && appConfig.gacha && appConfig.gacha.tiers) || [];
@@ -1754,7 +1793,7 @@
                 return;
             }
             const palette = TIER_PALETTE[index % TIER_PALETTE.length];
-            map.set(tier.key, { badge: palette, ring: palette.split(' ')[0] });
+            map.set(tier.key, { badge: palette.badge, ring: palette.badge.split(' ')[0], text: palette.text });
         });
         tierStyleMap = map;
     }
@@ -1854,21 +1893,19 @@
 
         const ratesEl = document.getElementById('gacha-rates');
         if (ratesEl && pool) {
-            const shareByKey = new Map(((appConfig && appConfig.gacha && appConfig.gacha.tiers) || [])
-                .map(tier => [tier.key, tier.share]));
+            // 只报档位名与出现概率：池里有几张、占比多少属于内部数字，不往外露。
+            // 每个方框结构相同（档位名一行 + 概率一行），所以大小天然一致；
+            // 「终极」是什么奖品放在下面的说明里，不塞进方框，否则那一格会比其他格高。
+            // 档位名是主角，字号放到最大；概率是配角，缩小并压暗一档，不跟档位名抢视线。
             ratesEl.innerHTML = pool.rates.map(item => {
                 const style = tierStyle(item.key);
-                const share = shareByKey.get(item.key);
-                // 奖品档（终极）不是鸟图，别显示"N 张"，直接说清奖品是什么
-                const detail = item.prize
-                    ? '全站长图'
-                    : `${item.count} 张${share === undefined ? '' : ` · 池占比 ${(share * 100).toFixed(0)}%`}`;
-                return `<div class="border-2 ${style.ring} ${style.badge} px-2 py-1 text-center">
-                    <div class="font-bold">${item.label} ${(item.rate * 100).toFixed(0)}%</div>
-                    <div class="opacity-70">${detail}</div>
+                return `<div class="border-2 ${style.badge} px-1 py-1.5 flex flex-col items-center justify-center leading-tight">
+                    <div class="text-base md:text-2xl font-bold ${style.text}">${item.label}</div>
+                    <div class="text-[10px] md:text-xs font-bold ${style.text} opacity-70">${(item.rate * 100).toFixed(0)}%</div>
                 </div>`;
-            }).join('') + `<div class="col-span-2 md:col-span-4 text-gray-500">
-                共 ${pool.total} 张图参与抽卡。点赞越多的图档位越高、单张越难抽到（同一 IP 对每张图只能赞一次）
+            }).join('') + `<div class="col-span-5 text-gray-500">
+                点赞越多的图档位越高、单张越难抽到（同一 IP 对每张图只能赞一次）。
+                抽到「终极」得 1 次全站长图导出额度
             </div>`;
         }
     }
@@ -1898,6 +1935,13 @@
 
         gachaBatch = Array.isArray(results) ? results.slice() : [];
 
+        // 档位角标：加粗 + 按档位上色（传说金、史诗紫、稀有蓝、终极七色渐变），一眼能分出珍稀度。
+        // 名字包一层子 span：终极的彩虹边框靠外层 .tier-ultimate 的 background，
+        // 渐变字也吃 background，放在同一个元素上会互相覆盖。
+        const tierBadge = (item, style) =>
+            `<span class="absolute top-1 left-1 text-[11px] font-bold px-1 border ${style.badge}">`
+            + `<span class="${style.text}">${item.tierLabel}</span></span>`;
+
         container.innerHTML = gachaBatch.map((item, index) => {
             const style = tierStyle(item.tierKey);
             const delay = `style="animation-delay: ${Math.min(index * 70, 420)}ms"`;
@@ -1905,7 +1949,7 @@
             // 终极大奖：长图导出（不是鸟图，没有图片可展示）；边框是彩虹渐变
             if (item.prize) {
                 return `<div class="gacha-prize relative p-2 flex flex-col items-center justify-center text-center min-h-[140px]" ${delay}>
-                    <span class="absolute top-1 left-1 text-[10px] px-1 border ${style.badge}">${item.tierLabel}</span>
+                    ${tierBadge(item, style)}
                     <i class="fa fa-download text-3xl my-3" style="color: #a855f7;"></i>
                     <p class="font-bold" style="color: #9a3412;">长图导出</p>
                     <p class="text-[11px] mt-1" style="color: #b45309;">获得 1 次导出额度</p>
@@ -1921,7 +1965,7 @@
             return `<div class="gacha-flip relative border-2 ${style.ring} p-1 bg-white" ${delay}>
                 <div class="relative">
                     <img src="${src}" alt="${name}" class="w-full h-24 md:h-28 object-cover bg-gray-100">
-                    <span class="absolute top-1 left-1 text-[10px] px-1 border ${style.badge}">${item.tierLabel}</span>
+                    ${tierBadge(item, style)}
                     ${rare ? '<span class="gacha-spark" style="right: 8%; top: 8%;">✦</span>' : ''}
                 </div>
                 <div class="flex items-center justify-between mt-1 text-xs">
@@ -1932,11 +1976,24 @@
             </div>`;
         }).join('');
 
-        const counts = {};
-        gachaBatch.forEach(item => { counts[item.tierLabel] = (counts[item.tierLabel] || 0) + 1; });
         if (summary) {
-            summary.textContent = `本批 ${gachaBatch.length} 张：`
-                + Object.entries(counts).map(([label, n]) => `${label}×${n}`).join('、');
+            // 统计按档位名次排（传说在前、普通在后），而不是按抽出来的先后
+            const rank = tierRankMap();
+            const tally = new Map();
+            gachaBatch.forEach(item => {
+                const key = item.tierKey || 'common';
+                const entry = tally.get(key) || { label: item.tierLabel, count: 0 };
+                entry.count += 1;
+                tally.set(key, entry);
+            });
+            const ordered = [...tally.entries()]
+                .sort((a, b) => (rank.get(a[0]) ?? Infinity) - (rank.get(b[0]) ?? Infinity));
+
+            // 档位名按档位上色加粗（传说金、史诗紫…），后面的 ×N 保持灰色不抢眼
+            summary.innerHTML = `本批 ${gachaBatch.length} 张：`
+                + ordered.map(([key, entry]) =>
+                    `<b class="${tierStyle(key).text}">${escapeHtml(entry.label)}</b>×${entry.count}`
+                ).join('、');
         }
         if (actions) actions.classList.toggle('hidden', gachaBatch.length === 0);
     }
@@ -1995,7 +2052,7 @@
 
     // ==================== 终极大奖：下载全站长图 ====================
     // 长图由服务端后台用 sharp 合成（longimage.js），版面参照原来的导出效果：
-    // 两行标题 + 4 列卡片 + 居中加粗名字，全站图片都在里面。
+    // 一行标题 + 4 列卡片 + 居中加粗名字，全站图片都在里面。
     // 前端只做一件事：把生成好的文件下载下来。下载即扣 1 次额度（服务端扣）。
 
     async function downloadLongImage() {
@@ -3058,6 +3115,22 @@
                 showNotification('加载更多鸟类失败');
                 loadMoreBtn.innerHTML = '<i class="fa fa-refresh mr-2"></i>加载更多';
             });
+    }
+
+    // ==================== 到顶部 / 到底部 ====================
+    // 到底部按 scrollHeight 现算，不缓存：加载更多、搜索换列表之后高度都会变。
+    function setupScrollJump() {
+        const toTop = document.getElementById('scroll-to-top');
+        const toBottom = document.getElementById('scroll-to-bottom');
+        if (!toTop || !toBottom) return;
+
+        const jump = top => window.scrollTo({
+            top,
+            behavior: prefersReducedMotion() ? 'auto' : 'smooth'
+        });
+
+        toTop.addEventListener('click', () => jump(0));
+        toBottom.addEventListener('click', () => jump(document.documentElement.scrollHeight));
     }
 
     // 显示通知

@@ -66,8 +66,8 @@ const PORT = asPositiveInt(PORT_SETTING.value, 3000);
 /**
  * 解析 trustProxy，决定 Express 信任哪一层代理。
  *
- * 默认 'loopback'：只信任本机回环上的反向代理。natapp 这类内网穿透就跑在本机，
- * 对端是 127.0.0.1/::1，Express 会把 req.ip 解析成"最右侧不可信地址"，
+ * 默认 'loopback'：只信任本机回环上的反向代理。公网部署时 nginx 就装在同一台机器上
+ * （内网穿透也属同类场景），对端是 127.0.0.1/::1，Express 会把 req.ip 解析成"最右侧不可信地址"，
  * 因此客户端自己伪造 X-Forwarded-For 也无法换一个 IP 去刷上传额度。
  * 以前写死 true（信任所有代理）时，请求头里塞一个 XFF 就能绕过按 IP 的额度统计。
  * 代理不在本机时，可设为 true / 跳数 / IP 或 CIDR 列表（如 '10.0.0.0/8'）。
@@ -242,7 +242,7 @@ async function writeOperationLog(logs) {
     }
 }
 
-// 获取客户端IP - 针对natapp穿透优化版本
+// 获取客户端IP —— 适配"本机反向代理"（nginx / 内网穿透都属此列）
 function getClientIp(req) {
     // trust proxy 已按 TRUST_PROXY 解析过 X-Forwarded-For：
     // req.ip 取的是"最右侧不可信地址"，客户端伪造的 XFF 影响不到它。
@@ -835,8 +835,8 @@ const DAILY_SINGLE_TICKETS = asInt(GACHA_SETTING.dailySingleTickets, 2);
 const DAILY_TEN_TICKETS = asInt(GACHA_SETTING.dailyTenTickets, 1);
 const TEN_PULL_SINGLE_COST = asPositiveInt(GACHA_SETTING.tenPullSingleCost, 10);
 const GACHA_ZIP_MAX_IMAGES = asPositiveInt(GACHA_SETTING.zipMaxImages, 10);
-// 终极大奖：长图导出。导出本身仍在浏览器里用 html2canvas 完成（见 public/html-to-png.js），
-// 服务端只记账 —— 抽到"终极"档加额度，用一次扣一次。额度存在同一个 gacha_tickets.json 里。
+// 终极大奖：长图导出。长图由服务端 sharp 合成（见 longimage.js），
+// 服务端同时还记账 —— 抽到"终极"档加额度，用一次扣一次。额度存在同一个 gacha_tickets.json 里。
 const LONG_IMAGE_PRIZE = 'longImage';
 const EXPORT_CREDITS_PER_HIT = asPositiveInt(GACHA_SETTING.exportCreditsPerHit, 1);
 let ticketsCache = null;

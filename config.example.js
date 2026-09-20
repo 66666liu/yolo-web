@@ -15,11 +15,11 @@
 module.exports = {
     // ---------- 基础 ----------
     port: 3000,                     // 监听端口（环境变量 PORT 可覆盖）
-    trustProxy: 'loopback',         // Express trust proxy。本机 natapp 用 'loopback'；
+    trustProxy: 'loopback',         // Express trust proxy。nginx 同机反代用 'loopback'；
                                     // 代理不在本机时填 true / 跳数 / 'IP或CIDR列表'
     corsOrigins: [                  // 允许跨域访问的站点（同源访问不需要，可以留空数组）
-        'http://localhost:3000',
-        'http://b6a58fd3.natappfree.cc'
+                                    // 公网部署后填正式域名，例如 'https://你的域名'
+        'http://localhost:3000'
     ],
 
     // ---------- 上传 ----------

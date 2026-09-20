@@ -1,6 +1,7 @@
 # 夜鹭页录 (YeluYelu)
 
-<a href="https://yeluyelu.mynatapp.cc/">点击前往网站</a>
+<!-- 上线后把这里换成正式域名 -->
+<a href="https://你的域名/">点击前往网站</a>
 
 ### 记录夜鹭奇妙拟态的图鉴网站，支持远程上传
 
@@ -10,7 +11,7 @@
 
 期待你的最新上传！
 
-<a href="https://space.bilibili.com/29602970" class="text-l font-bold underline">另可点击此处联系开发者</a>
+<a href="https://space.bilibili.com/29602970">另可点击此处联系开发者</a>
 
 ### 欢迎重新部署
 
@@ -18,9 +19,10 @@
 
 请联系我并分发您的新网址！
 
-部署步骤:
+本地跑起来:
 ```bash
 npm install
+npm run build     # 生成 public/output.css（样式是本地构建的，不走 CDN）
 node server.js
 ```
 
@@ -59,8 +61,22 @@ ADMIN_KEY_HASH=<hash> node server.js
 - 上传 `POST /api/birds`、点赞、抽卡都是公开功能，不需要管理权限；
 - 换口令会让所有旧 token 立即失效（会话密钥由口令哈希派生）；
 - 口令不会出现在 URL 里（`login` 命令被前端截获，不会当成搜索词发出去），所以不会进服务端访问日志；
-- 注意：natapp 免费隧道是 **http**，口令与 token 在链路上仍是明文。公网正式部署建议套 HTTPS，
-  否则上面这些只在"防猜、防爆破、防日志泄漏"层面生效。
+- ⚠️ **不套 HTTPS 的话，口令与 token 在链路上是明文**，上面这些只在"防猜、防爆破、防日志泄漏"层面生效。
+  公网部署务必配 HTTPS（见《部署方案-国内轻量.md》第五节）。
+
+### 公网部署
+
+完整流程、服务器选型与需要提前做的改造，见 **[部署方案-国内轻量.md](部署方案-国内轻量.md)**
+（阿里云/腾讯云香港轻量，免备案）。
+
+上线前必须确认的三件事：
+
+1. **样式/图标全部本地化**（不再依赖任何 CDN）—— 改完 `public/index.html` 或 `src/input.css`
+   都要 `npm run build` 重新生成 `public/output.css`，再跑 `npm run check:css`。
+   这个脚本做三项静态自检（不需要浏览器）：**类名**有没有漏、**引用的本地文件**在不在、
+   **fa-\* 图标名**在 Font Awesome 里有没有定义。三项都是"服务端不报错、只有肉眼能看出坏"的坑。
+2. **`config.js` 用 `adminKeyHash`**，不要留明文 `adminKey`（启动日志会提示当前是"已自定义"还是"⚠ 默认口令"）。
+3. **服务器上执行 `git update-index --skip-worktree data.json`**，否则 `git pull` 会拿仓库版本覆盖线上图鉴数据。
 
 ### 抽卡玩法
 
@@ -98,7 +114,7 @@ ADMIN_KEY_HASH=<hash> node server.js
 |---|---|---|
 | `port` | 3000 | 监听端口 |
 | `trustProxy` | `loopback` | Express trust proxy；代理不在本机时改成 `true`/跳数/IP 列表 |
-| `corsOrigins` | localhost + 旧隧道域名 | 允许跨域访问的站点（同源访问不受影响） |
+| `corsOrigins` | `localhost:3000` | 允许跨域访问的站点（同源访问不受影响，公网填正式域名） |
 | `maxImageMB` | 20 | 单张图片上限，**前后端共用**（页面文案与前端校验都会跟着变） |
 | `uploadDailyLimit` | 8 | 每 IP 每天成功上传次数；`0` = 不限量 |
 | `writeBurstPerMinute` | 30 | 写操作（上传/编辑/删除/打包）限流 |
@@ -131,7 +147,7 @@ ADMIN_KEY_HASH=<hash> node server.js
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `UPLOAD_DAILY_LIMIT` | `8` | 每 IP 每天允许的成功上传次数；`0` / `off` / `unlimited` / 负数 = **不限量**（本地测试用） |
-| `TRUST_PROXY` | `loopback` | Express `trust proxy` 设置。默认只信任本机回环代理（natapp 场景，客户端无法靠伪造 `X-Forwarded-For` 换 IP 刷额度）；代理不在本机时按需设为 `true` / 跳数 / IP 或 CIDR 列表 |
+| `TRUST_PROXY` | `loopback` | Express `trust proxy` 设置。默认只信任本机回环上的反向代理（nginx 同机反代正好如此，客户端无法靠伪造 `X-Forwarded-For` 换 IP 刷额度）；代理不在本机时按需设为 `true` / 跳数 / IP 或 CIDR 列表 |
 | `PORT` | `3000` | 监听端口 |
 
 ```bash
@@ -156,12 +172,17 @@ $env:UPLOAD_DAILY_LIMIT='0'; node server.js    # Windows PowerShell
 
 详见 `docs/detection-implementation.md`。
 
-### 支持导出长图
+### 全站长图（抽卡"终极"大奖）
 
-点击页面底部的“导出图片”，即可导出当前加载的所有图鉴！
+长图**由服务端用 sharp 现成合成**（`longimage.js`），一行标题 + 4 列卡片 + 居中加粗的名字，
+名字太长会自动缩字号或折成两行。前端只负责把文件下载下来。
 
-当前版本：夜鹭页录_v2025.06.03_1602
+- **不是按图鉴变化实时重算的**：图鉴一变只把长图标记为"过期"，等有人真的下载时才在后台重算
+  （一次约 2 秒、纯 CPU）。这样日常上传不会白白烧性能。
+- 生成好的文件缓存在 `long-image/`（已在 `.gitignore`，删掉会自动重算）。
+- 名字是服务端渲染的，**服务器上必须装中文字体**，否则名字全是方块（见部署文档第三节）。
+- 抽到「终极」得 1 次导出额度，下载一次扣一次；管理员不受额度限制。
 
 <p>
-  <img src="assets/夜鹭页录_v2025.06.03_1602.jpg" alt="导出长图">
+  <img src="assets/夜鹭页录_v2025.06.03_1602.jpg" alt="全站长图">
 </p>

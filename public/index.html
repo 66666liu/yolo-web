@@ -5,60 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>夜鹭页录</title>
     <link rel="icon" href="images/游隼.jpg" type="image/jpg">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 不再需要 html2canvas：全站长图改由服务端 sharp 合成 -->
-    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#111111',
-                        secondary: '#303030',
-                        neutral: '#e5e7eb',
-                        dark: '#212529'
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    <style type="text/tailwindcss">
-        @layer utilities {
-            .content-auto {
-                content-visibility: auto;
-            }
-
-            .card-hover {
-                @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
-            }
-
-            .btn-primary {
-                @apply bg-primary hover:bg-secondary text-white font-medium py-2 px-4 transition-all duration-300;
-            }
-
-            .btn-outline {
-                @apply border border-primary text-primary hover:bg-primary hover:text-white font-medium py-2 px-4 transition-all duration-300;
-            }
-
-            /* 强制每行4列的网格布局 */
-            .gallery-fixed-cols {
-                grid-template-columns: repeat(4, minmax(0, 1fr));
-            }
-
-            /* 仅在导出PNG中显示的元素（默认隐藏） */
-            .export-only {
-                display: none !important;
-            }
-
-            /* 仅在网页中显示的元素（默认显示） */
-            .screen-only {
-                display: block !important;
-            }
-        }
-    </style>
+    <!-- 样式与图标一律走本地文件。
+         原来是 cdn.tailwindcss.com（浏览器里实时编译）+ cdn.jsdelivr.net（图标），
+         这两个域名在国内访问不稳定，Tailwind 那个一挂整站就是无样式的白页，
+         所以换成本地构建。改完样式、改完这个文件里的类名，都要重新构建一次
+         output.css（见 README），然后用 check:css 脚本核一遍有没有漏掉的类名。
+         自定义配色与 @layer 里的工具类在 tailwind.config.js / src/input.css。 -->
+    <link href="output.css" rel="stylesheet">
+    <link href="font-awesome.min.css" rel="stylesheet">
     <!-- ===== 动效层（P0/P1）=====
          全部只动 transform / opacity（走合成层，不触发重排）；手机端与系统"减少动态效果"
          会自动降级。所有动效层都带 no-export，且导入长图前会被强制落到终态。 -->
@@ -210,18 +164,6 @@
             to { opacity: 0; }
         }
 
-        /* ---------- 导出长图：全部动画强制终态，否则会截到半透明的卡片 ---------- */
-        html.exporting .card-reveal,
-        .exporting .card-reveal,
-        html.exporting .gacha-flip,
-        .exporting .gacha-flip {
-            animation: none !important;
-            opacity: 1 !important;
-            transform: none !important;
-        }
-        html.exporting #feather-canvas,
-        html.exporting #bg-photo { display: none !important; }
-
         /* ---------- Q 版夜鹭光标（仅桌面端：触屏没有光标，不必加载） ----------
            图片 32×32，热点设在喙尖 (1,1)，和箭头一个朝向；素材见 public/cursor-yelu*.png */
         @media (pointer: fine) {
@@ -280,7 +222,7 @@
 <header class="bg-white border-b-2 border-black p-4 fixed w-full z-50 transition-all duration-300" id="navbar">
     <div class="container mx-auto px-4 py-3 flex justify-between items-center">
         <div class="flex items-center space-x-2">
-            <i class="fa fa-dove text-primary text-5xl"></i>
+            <i class="fa fa-twitter text-primary text-5xl"></i>
             <h1 class="text-lg md:text-2xl lg:text-3xl font-bold text-primary">夜鹭拟态与分辨图鉴</h1>
         </div>
         <button id="add-bird-btn" class="btn-primary flex items-center">
@@ -354,11 +296,10 @@
         </p>
     </div>
 
-    <div id="bird-gallery-export">
-        <p class="text-black ml-1 mt-4 text-3xl font-bold export-only">常见鸟类辨识图鉴</p>
-        <p class="text-black ml-1 mt-2 mb-4 text-base export-only">来自：夜鹭页录 https://yeluyelu.mynatapp.cc</p>
-
+    <div>
         <!-- 鸟类画廊 -->
+        <!-- 长图上的标题与页脚由服务端 longimage.js 画（POSTER_TITLE），
+             这里原来还有两个只在浏览器导出时显示的 .export-only 段落，随导出脚本一起删了。 -->
         <div id="bird-gallery" class="grid gallery-fixed-cols gap-1 md:gap-8 export-area">
             <!-- 鸟类卡片将通过JavaScript动态生成；这里是首屏骨架屏 -->
             <div class="p-0.5 mb-2.5 no-export" aria-hidden="true">
@@ -571,7 +512,7 @@
                 若图片或素材涉嫌侵权，请联系管理员删除！<br>
                 <br>
                 期待你的上传！<br>
-                <a href="https://space.bilibili.com/29602970" class="text-l font-bold underline">另可点击此处联系开发者</a>
+                <a href="https://space.bilibili.com/29602970" class="text-lg font-bold underline">另可点击此处联系开发者</a>
             </p>
         </div>
         <div class="p-6 border-t">
@@ -610,35 +551,12 @@
     </div>
 </div>
 
-<script src="html-to-png.js"></script>
-
 <script>
-    window.isServiceWorkerEnabled = false; // 全局标志，默认禁用
-
-    // 注册 Service Worker
-    // if ('serviceWorker' in navigator) {
-    //     window.addEventListener('load', () => {
-    //         navigator.serviceWorker.register('/sw.js')
-    //             .then(registration => {
-    //                 console.log('SW registered:', registration);
-    //                 window.isServiceWorkerEnabled = true; // 注册成功，启用缓存
-    //             })
-    //             .catch(error => {
-    //                 console.log('SW registration failed:', error);
-    //                 // 注册失败时清除可能存在的旧缓存
-    //                 if ('caches' in window) {
-    //                     caches.keys().then(cacheNames => {
-    //                         return Promise.all(
-    //                             cacheNames.map(cacheName => {
-    //                                 return caches.delete(cacheName);
-    //                             })
-    //                         );
-    //                     });
-    //                 }
-    //                 window.isServiceWorkerEnabled = false; // 禁用缓存
-    //             });
-    //     });
-    // }
+    // 长图导出全部走服务端：前端只负责把 /api/gacha/export/long-image 返回的文件下载下来。
+    // 这里以前还挂着一个浏览器端 html2canvas 导出脚本和一套 Service Worker 缓存，
+    // 两条路都被服务端方案取代了，脚本和 sw.js 已删除。
+    // 下面代码里还留着若干 isServiceWorkerEnabled 判断，恒为 false，走的是不走缓存那条分支。
+    window.isServiceWorkerEnabled = false;
 
     // API配置
     // 根据当前域名动态设置 API 基础 URL
@@ -650,6 +568,16 @@
         // 生产环境使用当前域名
         return `${window.location.protocol}//${window.location.host}/api`;
     })();
+    // 无图 / 图裂时的占位图。
+    // 原来指向 picsum.photos（外部域名，国内不稳，而且每次访问都会换一张随机图），
+    // 改成内联 SVG：不走网络、不裂图，也不会拿别人的照片冒充。
+    const PLACEHOLDER_IMG = 'data:image/svg+xml,' + encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
+            <rect width="400" height="300" fill="#f3f4f6"/>
+            <text x="200" y="160" font-size="26" fill="#9ca3af" text-anchor="middle">暂无图片</text>
+        </svg>`.replace(/\n\s*/g, '')
+    );
+
     const CACHE_NAME = 'bird-guide-cache-v4';   // v4：列表新增 likes/tier 字段，旧缓存必须失效
     const CACHE_EXPIRATION_DAYS = 7; // 缓存过期天数
     let currentBirdId = null; // 当前操作的鸟类ID
@@ -1489,8 +1417,8 @@
     //   1. 只动 transform/opacity（走合成层，不触发重排）；
     //   2. 离屏 / 切到后台 / 滚过首屏就停，不空转；
     //   3. 系统"减少动态效果"时全关；
-    //   4. 手机端按屏幕面积缩粒子数、DPR 封顶 2；
-    //   5. 导出长图前由 html-to-png.js 加 .exporting 把动画强制落到终态。
+    //   4. 手机端按屏幕面积缩粒子数、DPR 封顶 2。
+    // 长图改服务端合成后，就不再需要"导出前把动画落到终态"这一步了。
 
     const prefersReducedMotion = () => Boolean(window.matchMedia)
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2874,7 +2802,7 @@
 
         // 创建图片元素
         const img = document.createElement('img');
-        img.src = bird.imageUrl ? `${API_BASE_URL}/images/${bird.imageUrl}` : 'https://picsum.photos/seed/default/400/300';
+        img.src = bird.imageUrl ? `${API_BASE_URL}/images/${bird.imageUrl}` : PLACEHOLDER_IMG;
         img.alt = bird.name;
         img.className = 'w-full h-full object-cover';
 
@@ -2913,7 +2841,7 @@
         // 错误处理
         img.onerror = function () {
             // 使用默认图片并应用相同的宽高比逻辑
-            this.src = 'https://picsum.photos/seed/error/400/300';
+            this.src = PLACEHOLDER_IMG;
             this.onload(); // 触发默认图片的加载事件
         };
 
@@ -2928,7 +2856,7 @@
         card.innerHTML = `
     <div class="p-1">
         <div class="flex ${isAdminMode ? 'justify-between' : 'justify-center'} items-center">
-            <h3 class="font-bold text-lg md:text-l lg:text-2xl ${!isAdminMode ? 'text-center' : ''} leading-tight md:leading-relaxed">${escapeHtml(bird.name)}</h3>
+            <h3 class="font-bold text-lg md:text-xl lg:text-2xl ${!isAdminMode ? 'text-center' : ''} leading-tight md:leading-relaxed">${escapeHtml(bird.name)}</h3>
             ${isAdminMode ? `
             <div class="flex space-x-2">
                 <button class="bg-gray-100 p-2 cursor-pointer transition-all hover:bg-gray-200 edit-btn" data-id="${bird.id}">

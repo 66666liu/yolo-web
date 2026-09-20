@@ -11,7 +11,8 @@
   "scripts": {
     "start": "node server.js",
     "build": "tailwindcss build src/input.css -o public/output.css",
-    "watch": "tailwindcss build src/input.css -o public/output.css --watch"
+    "watch": "tailwindcss build src/input.css -o public/output.css --watch",
+    "check:css": "node scripts/check-tailwind.js"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",

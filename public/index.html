@@ -333,12 +333,12 @@
 <div id="gacha-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden no-export p-4">
     <div id="gacha-panel"
          class="bg-white shadow-2xl w-full max-w-2xl transform transition-all duration-300 scale-95 opacity-0 max-h-[90vh] overflow-y-auto">
-        <div class="flex justify-between items-center p-5 border-b">
+        <div class="flex justify-between items-center px-5 py-3 border-b">
             <h2 class="text-2xl font-bold">夜鹭抽卡模拟器</h2>
             <button id="gacha-close" class="text-gray-500 hover:text-black text-3xl leading-none">&times;</button>
         </div>
-        <div class="p-5">
-            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 mb-4 text-sm">
+        <div class="px-5 pt-3 pb-4">
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 mb-2 text-sm">
                 <span>单抽券：<b id="gacha-single-count" class="text-lg">0</b> 张</span>
                 <span>十连券：<b id="gacha-ten-count" class="text-lg">0</b> 张</span>
                 <span class="text-gray-500 text-xs" id="gacha-gift-hint">
@@ -347,30 +347,33 @@
             </div>
 
             <!-- 五个档位一行摆平，方框大小一致（2 列/4 列那种排法会让第 5 个掉到下一行、宽度也不一样） -->
-            <div id="gacha-rates" class="grid grid-cols-5 gap-1.5 md:gap-2 mb-4"></div>
+            <div id="gacha-rates" class="grid grid-cols-5 gap-1.5 md:gap-2 mb-3"></div>
 
-            <div class="flex flex-col md:flex-row gap-3 mb-5">
-                <button id="gacha-pull-1" class="btn-primary flex-1 py-3">单抽</button>
-                <button id="gacha-pull-10" class="btn-primary flex-1 py-3">十连抽</button>
+            <div class="flex flex-col md:flex-row gap-2 mb-3">
+                <button id="gacha-pull-1" class="btn-primary flex-1 py-2.5">单抽</button>
+                <button id="gacha-pull-10" class="btn-primary flex-1 py-2.5">十连抽</button>
             </div>
 
-            <!-- 终极大奖：全站长图（服务端后台生成）。平时不出现，抽到"终极"档拿到额度后才显示 -->
-            <div id="gacha-export-row" class="hidden mb-5 p-3 border-2 border-yellow-500 bg-yellow-50 flex-col md:flex-row md:items-center gap-3">
+            <div id="gacha-result" class="grid grid-cols-2 md:grid-cols-5 gap-2"></div>
+
+            <div id="gacha-result-actions" class="hidden mt-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <p id="gacha-result-summary" class="text-sm text-gray-600"></p>
+                <button id="gacha-download" class="btn-primary px-4 py-2 whitespace-nowrap">
+                    <i class="fa fa-download mr-1"></i>下载本批（zip）
+                </button>
+            </div>
+
+            <!-- 终极大奖：全站长图（服务端后台生成）。平时不出现，抽到"终极"档拿到额度后才显示。
+                 单独一个黄框，和"下载本批"分开：它是抽卡结果里最稀有的一张（"终极"那张卡），
+                 有额度时就要一直可见，不能跟着"本批有没有抽到东西"一起收起。
+                 它出现时弹窗放不下、要滚一下是预期的 —— 换来的是这一行始终显眼。 -->
+            <div id="gacha-export-row" class="hidden mt-3 p-3 border-2 border-yellow-500 bg-yellow-50 flex-col md:flex-row md:items-center gap-3">
                 <button id="gacha-export" class="btn-primary px-4 py-2 whitespace-nowrap">
                     <i class="fa fa-download mr-1"></i>下载全站长图（剩 <b id="gacha-export-count">0</b> 次）
                 </button>
                 <span id="gacha-export-hint" class="text-xs text-yellow-800">
                     抽卡"终极"大奖：抽到一次得 1 次下载额度，用一次扣一次（额度不会过期）
                 </span>
-            </div>
-
-            <div id="gacha-result" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
-
-            <div id="gacha-result-actions" class="hidden mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <p id="gacha-result-summary" class="text-sm text-gray-600"></p>
-                <button id="gacha-download" class="btn-primary px-4 py-2 whitespace-nowrap">
-                    <i class="fa fa-download mr-1"></i>下载本批（zip）
-                </button>
             </div>
         </div>
     </div>
@@ -1809,7 +1812,7 @@
         if (pull1Btn) pull1Btn.disabled = !adminTest && tickets.single < 1;
         if (pull10Btn) pull10Btn.disabled = !adminTest && !(tickets.ten >= 1 || tickets.single >= 10);
 
-        // 终极大奖：有长图导出额度才显示这一行（管理员测试模式始终显示，且不扣额度）
+        // 终极大奖：有长图导出额度才显示黄框（管理员测试模式始终显示，且不扣额度）
         const exportRow = document.getElementById('gacha-export-row');
         const exportCountEl = document.getElementById('gacha-export-count');
         const credits = tickets.exportCredits || 0;
